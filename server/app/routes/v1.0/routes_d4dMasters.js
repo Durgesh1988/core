@@ -2638,9 +2638,13 @@ module.exports.setRoutes = function(app, sessionVerification) {
                                                         }
                                                         logger.debug("Default TemplateType created.");
                                                     });
+                                                    if (x1 === 4) {
+                                                        res.send(200);
+                                                        return;
+                                                    }
                                                 })(x1);
                                             }
-                                            for (var x = 0; x < 4; x++) {
+                                           /* for (var x = 0; x < 4; x++) {
                                                 (function(x) {
                                                     var teamName;
                                                     var descriptions;
@@ -2684,7 +2688,7 @@ module.exports.setRoutes = function(app, sessionVerification) {
                                                     }
                                                 })(x);
 
-                                            }
+                                            }*/
 
                                         });
                                     } else if (req.params.id === '7') {
