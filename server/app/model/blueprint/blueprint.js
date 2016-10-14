@@ -202,13 +202,21 @@ var BlueprintSchema = new Schema({
         required:false,
         default:false
     },
+    shortDesc: {
+        type: String,
+        trim: true
+    },
+    botType: {
+        type: String,
+        trim: true,
+    },
     isDeleted: {
         type: Boolean,
         default: false
     },
-    createdOn:{
-        type:String,
-        default:Date.now
+    createdOn: {
+        type: String,
+        default: Date.now
     }
 });
 
