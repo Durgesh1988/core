@@ -214,292 +214,16 @@ var BlueprintSchema = new Schema({
 
 BlueprintSchema.plugin(mongoosePaginate);
 
-function getBlueprintConfigType(blueprint) {
-    var BlueprintConfigType;
-    if ((blueprint.blueprintType === BLUEPRINT_TYPE.INSTANCE_LAUNCH) && blueprint.blueprintConfig) {
-        BlueprintConfigType = InstanceBlueprint;
-    } else if ((blueprint.blueprintType === BLUEPRINT_TYPE.DOCKER) && blueprint.blueprintConfig) {
-        BlueprintConfigType = DockerBlueprint;
-    } else if ((blueprint.blueprintType === BLUEPRINT_TYPE.AWS_CLOUDFORMATION) && blueprint.blueprintConfig) {
-        BlueprintConfigType = CloudFormationBlueprint;
-    } else if ((blueprint.blueprintType === BLUEPRINT_TYPE.AZURE_ARM_TEMPLATE) && blueprint.blueprintConfig) {
-        BlueprintConfigType = ARMTemplateBlueprint;
-    } else if ((blueprint.blueprintType === BLUEPRINT_TYPE.OPENSTACK_LAUNCH || blueprint.blueprintType === BLUEPRINT_TYPE.HPPUBLICCLOUD_LAUNCH) && blueprint.blueprintConfig) {
-        BlueprintConfigType = OpenstackBlueprint;
-    } else if ((blueprint.blueprintType === BLUEPRINT_TYPE.AZURE_LAUNCH) && blueprint.blueprintConfig) {
-        BlueprintConfigType = AzureBlueprint;
-    } else if ((blueprint.blueprintType === BLUEPRINT_TYPE.VMWARE_LAUNCH) && blueprint.blueprintConfig) {
-        logger.debug('this is test');
-        BlueprintConfigType = VmwareBlueprint;
-    } else {
-        return;
-    }
-    var blueprintConfigType = new BlueprintConfigType(blueprint.blueprintConfig);
-    return blueprintConfigType;
-}
-
-BlueprintSchema.methods.update = function(updateData, callback) {
-    var blueprintConfigType = getBlueprintConfigType(this);
-    if (!blueprintConfigType) {
-        process.nextTick(function() {
-            callback({
-                message: "Invalid Blueprint Type"
-            }, null);
-        });
-    }
-    blueprintConfigType.update(updateData);
-    this.blueprintConfig = blueprintConfigType;
-    this.save(function(err, updatedBlueprint) {
+BlueprintSchema.statics.createNew = function(blueprintData, callback) {
+    var blueprint = new Blueprints(blueprintData);
+    blueprint.save(function(err, blueprint) {
         if (err) {
+            logger.error(err);
             callback(err, null);
             return;
         }
-        callback(null, updatedBlueprint);
+        callback(null, blueprint);
     });
-};
-
-BlueprintSchema.methods.getVersionData = function(ver) {
-    var blueprintConfigType = getBlueprintConfigType(this);
-    if (!blueprintConfigType) {
-        return null;
-    }
-
-    return blueprintConfigType.getVersionData(ver);
-};
-
-BlueprintSchema.methods.getLatestVersion = function() {
-    var blueprintConfigType = getBlueprintConfigType(this);
-    if (!blueprintConfigType) {
-        return null;
-    }
-
-    return blueprintConfigType.getLatestVersion();
-};
-
-BlueprintSchema.methods.getInfraManagerData = function() {
-    var blueprintConfigType = getBlueprintConfigType(this);
-    if (!blueprintConfigType) {
-        return null;
-    }
-
-    return blueprintConfigType.getInfraManagerData();
-}
-
-BlueprintSchema.methods.getCloudProviderData = function() {
-    var blueprintConfigType = getBlueprintConfigType(this);
-    if (!blueprintConfigType) {
-        return null;
-    }
-
-    return blueprintConfigType.getCloudProviderData();
-}
-
-BlueprintSchema.methods.launch = function(opts, callback) {
-    var infraManager = this.getInfraManagerData();
-    var self = this;
-    masterUtil.getParticularProject(self.projectId, function(err, project) {
-        if (err) {
-            callback({
-                message: "Failed to get project via project id"
-            }, null);
-            return;
-        };
-        if (project.length === 0) {
-            callback({
-                "message": "Unable to find Project Information from project id"
-            });
-            return;
-        }
-        configmgmtDao.getEnvNameFromEnvId(opts.envId, function(err, envName) {
-            if (err) {
-                callback({
-                    message: "Failed to get env name from env id"
-                }, null);
-                return;
-            };
-            if (!envName) {
-                callback({
-                    "message": "Unable to find environment name from environment id"
-                });
-                return;
-            };
-            configmgmtDao.getChefServerDetails(infraManager.infraManagerId, function(err, chefDetails) {
-                if (err) {
-                    logger.error("Failed to getChefServerDetails", err);
-                    callback({
-                        message: "Failed to getChefServerDetails"
-                    }, null);
-                    return;
-                };
-                if (!chefDetails) {
-                    logger.error("No CHef Server Detailed available.", err);
-                    callback({
-                        message: "No Chef Server Detailed available"
-                    }, null);
-                    return;
-                };
-                var chef = new Chef({
-                    userChefRepoLocation: chefDetails.chefRepoLocation,
-                    chefUserName: chefDetails.loginname,
-                    chefUserPemFile: chefDetails.userpemfile,
-                    chefValidationPemFile: chefDetails.validatorpemfile,
-                    hostedChefUrl: chefDetails.url
-                });
-                logger.debug('Chef Repo Location = ', chefDetails.chefRepoLocation);
-                var blueprintConfigType = getBlueprintConfigType(self);
-                if (!self.appUrls) {
-                    self.appUrls = [];
-                }
-                var appUrls = self.appUrls;
-                if (appConfig.appUrls && appConfig.appUrls.length) {
-                    appUrls = appUrls.concat(appConfig.appUrls);
-                }
-                chef.getEnvironment(envName, function(err, env) {
-                    if (err) {
-                        logger.error("Failed chef.getEnvironment", err);
-                        callback(err, null);
-                        return;
-                    }
-                    if (!env) {
-                        chef.createEnvironment(envName, function(err) {
-                            if (err) {
-                                logger.error("Failed chef.createEnvironment", err);
-                                callback(err, null);
-                                return;
-                            }
-                            blueprintConfigType.launch({
-                                infraManager: chef,
-                                ver: opts.ver,
-                                envName: envName,
-                                envId: opts.envId,
-                                stackName: opts.stackName,
-                                domainName:opts.domainName,
-                                blueprintName: self.name,
-                                orgId: self.orgId,
-                                orgName: project[0].orgname,
-                                bgId: self.bgId,
-                                bgName: project[0].productgroupname,
-                                projectId: self.projectId,
-                                projectName: project[0].projectname,
-                                appUrls: appUrls,
-                                sessionUser: opts.sessionUser,
-                                users: self.users,
-                                blueprintData: self,
-                            }, function(err, launchData) {
-                                callback(err, launchData);
-                            });
-                        });
-                    } else {
-                        blueprintConfigType.launch({
-                            infraManager: chef,
-                            ver: opts.ver,
-                            envName: envName,
-                            envId: opts.envId,
-                            stackName: opts.stackName,
-                            domainName:opts.domainName,
-                            blueprintName: self.name,
-                            orgId: self.orgId,
-                            orgName: project[0].orgname,
-                            bgId: self.bgId,
-                            bgName: project[0].productgroupname,
-                            projectId: self.projectId,
-                            projectName: project[0].projectname,
-                            appUrls: appUrls,
-                            sessionUser: opts.sessionUser,
-                            users: self.users,
-                            blueprintData: self,
-                        }, function(err, launchData) {
-                            callback(err, launchData);
-                        });
-                    }
-                });
-            });
-        });
-    });
-};
-
-// static methods
-BlueprintSchema.statics.createNew = function(blueprintData, callback) {
-  
-
-    var blueprintConfig, blueprintType;
-    if ((blueprintData.blueprintType === BLUEPRINT_TYPE.INSTANCE_LAUNCH) && blueprintData.instanceData) {
-        blueprintType = BLUEPRINT_TYPE.INSTANCE_LAUNCH;
-        blueprintConfig = InstanceBlueprint.createNew(blueprintData.instanceData);
-    } else if ((blueprintData.blueprintType === BLUEPRINT_TYPE.DOCKER) && blueprintData.dockerData) {
-        blueprintType = BLUEPRINT_TYPE.DOCKER;
-        blueprintConfig = DockerBlueprint.createNew(blueprintData.dockerData);
-    } else if ((blueprintData.blueprintType === BLUEPRINT_TYPE.AWS_CLOUDFORMATION) && blueprintData.cloudFormationData) {
-        blueprintType = BLUEPRINT_TYPE.AWS_CLOUDFORMATION;
-        blueprintConfig = CloudFormationBlueprint.createNew(blueprintData.cloudFormationData);
-    } else if ((blueprintData.blueprintType === BLUEPRINT_TYPE.AZURE_ARM_TEMPLATE) && blueprintData.armTemplateData) {
-        blueprintType = BLUEPRINT_TYPE.AZURE_ARM_TEMPLATE;
-        blueprintConfig = ARMTemplateBlueprint.createNew(blueprintData.armTemplateData);
-    } else if ((blueprintData.blueprintType === BLUEPRINT_TYPE.OPENSTACK_LAUNCH) && blueprintData.instanceData) {
-        blueprintType = BLUEPRINT_TYPE.OPENSTACK_LAUNCH;
-        logger.debug('blueprintData openstack instacedata ==>', blueprintData.instanceData);
-        blueprintConfig = OpenstackBlueprint.createNew(blueprintData.instanceData);
-    } else if ((blueprintData.blueprintType === BLUEPRINT_TYPE.HPPUBLICCLOUD_LAUNCH) && blueprintData.instanceData) {
-        blueprintType = BLUEPRINT_TYPE.HPPUBLICCLOUD_LAUNCH;
-        logger.debug('blueprintData openstack instacedata ==>', blueprintData.instanceData);
-        blueprintConfig = OpenstackBlueprint.createNew(blueprintData.instanceData);
-    } else if ((blueprintData.blueprintType === BLUEPRINT_TYPE.AZURE_LAUNCH) && blueprintData.instanceData) {
-        blueprintType = BLUEPRINT_TYPE.AZURE_LAUNCH;
-        logger.debug('blueprintData azure instacedata ==>', blueprintData.instanceData);
-        blueprintConfig = AzureBlueprint.createNew(blueprintData.instanceData);
-        blueprintConfig.cloudProviderData = AzureBlueprint.createNew(blueprintData.instanceData);
-    } else if ((blueprintData.blueprintType === BLUEPRINT_TYPE.VMWARE_LAUNCH) && blueprintData.instanceData) {
-        blueprintType = BLUEPRINT_TYPE.VMWARE_LAUNCH;
-        logger.debug('blueprintData vmware instacedata ==>', blueprintData.instanceData);
-        blueprintConfig = VmwareBlueprint.createNew(blueprintData.instanceData);
-
-    } else {
-        process.nextTick(function() {
-            callback({
-                message: "Invalid Blueprint Type sdds"
-            }, null);
-        });
-        return;
-    }
-    logger.debug('blueprint id ..... ', blueprintData.id);
-    this.getCountByParentId(blueprintData.id, function(err, count) {
-        if (count <= 0) {
-            count = 1;
-        } else {
-            count++;
-        }
-        var blueprintObj = {
-            orgId: blueprintData.orgId,
-            bgId: blueprintData.bgId,
-            projectId: blueprintData.projectId,
-            name: blueprintData.name,
-            appUrls: blueprintData.appUrls,
-            iconpath: blueprintData.iconpath,
-            templateId: blueprintData.templateId,
-            templateType: blueprintData.templateType,
-            users: blueprintData.users,
-            blueprintConfig: blueprintConfig,
-            blueprintType: blueprintType,
-            nexus: blueprintData.nexus,
-            docker: blueprintData.docker,
-            version: count,
-            parentId: blueprintData.id,
-            domainNameCheck: blueprintData.domainNameCheck
-        };
-        var blueprint = new Blueprints(blueprintObj);
-        logger.debug(blueprint);
-        logger.debug('saving');
-        blueprint.save(function(err, blueprint) {
-            if (err) {
-                logger.error(err);
-                callback(err, null);
-                return;
-            }
-            logger.debug('save Complete');
-            callback(null, blueprint);
-        });
-    });
-
 };
 
 
@@ -544,13 +268,13 @@ BlueprintSchema.statics.getBlueprintByIds = function(blueprintIds, callback) {
     });
 };
 
-BlueprintSchema.statics.getCountByParentId = function(parentid, callback) {
-    if (parentid) {
+BlueprintSchema.statics.getCountByParentId = function(parentId, callback) {
+    if (parentId) {
         this.find({
             $or: [{
-                parentId: parentid
+                parentId: parentId
             }, {
-                _id: ObjectId(parentid)
+                _id: ObjectId(parentId)
             }]
         }, function(err, blueprint) {
             if (err) {
@@ -608,13 +332,12 @@ BlueprintSchema.statics.getBlueprintsByOrgBgProject = function(jsonData, callbac
         callback(null, blueprints);
 
     });
-
 };
 
 BlueprintSchema.statics.getBlueprintsByProviderId = function(providerId, callback) {
     this.find({
         "providerDetails.id": providerId
-    }, function(err, blueprints) {
+    },function(err, blueprints) {
         if (err) {
             logger.error(err);
             callback(err, null);
