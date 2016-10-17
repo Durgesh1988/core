@@ -2509,3 +2509,1361 @@ function launchOpenStackBlueprint(launchParams,callback){
         });
     });
 }
+
+function launchCloudFormationBlueprint(launchParams,callback){
+    var self = this;
+
+    AWSProvider.getAWSProviderById(self.cloudProviderId, function(err, aProvider) {
+        if (err) {
+            logger.error("Unable to fetch provide", err);
+            callback({
+                message: "Unable to fetch provider"
+            });
+            return;
+        }
+
+        var cryptoConfig = appConfig.cryptoSettings;
+        var cryptography = new Cryptography(cryptoConfig.algorithm,
+            cryptoConfig.password);
+
+        var awsSettings;
+        if (aProvider.isDefault) {
+            awsSettings = {
+                "isDefault": true,
+                "region": self.region
+            };
+        } else {
+
+            var decryptedAccessKey = cryptography.decryptText(aProvider.accessKey,
+                cryptoConfig.decryptionEncoding, cryptoConfig.encryptionEncoding);
+            var decryptedSecretKey = cryptography.decryptText(aProvider.secretKey,
+                cryptoConfig.decryptionEncoding, cryptoConfig.encryptionEncoding);
+
+            awsSettings = {
+                "access_key": decryptedAccessKey,
+                "secret_key": decryptedSecretKey,
+                "region": self.region
+            };
+        }
+
+        var templateFile = self.templateFile;
+        var settings = appConfig.chef;
+        var chefRepoPath = settings.chefReposLocation;
+        fileIo.readFile(chefRepoPath + 'catalyst_files/' + templateFile, function(err, fileData) {
+            if (err) {
+                logger.error("Unable to read template file " + templateFile, err);
+                callback({
+                    message: "Unable to read template file"
+                });
+                return;
+            }
+
+            if (typeof fileData === 'object') {
+                fileData = fileData.toString('ascii');
+            }
+
+            var awsCF = new AWSCloudFormation(awsSettings);
+            awsCF.createStack({
+                name: launchParams.stackName,
+                templateParameters: JSON.parse(JSON.stringify(self.stackParameters)),
+                templateBody: fileData
+            }, function(err, stackData) {
+
+                if (err) {
+                    logger.error("Unable to launch CloudFormation Stack", err);
+                    callback({
+                        message: "Unable to launch CloudFormation Stack"
+                    });
+                    return;
+                }
+
+
+                awsCF.getStack(stackData.StackId, function(err, stack) {
+                    if (err) {
+                        logger.error("Unable to get stack details", err);
+                        callback({
+                            "message": "Error occured while fetching stack status"
+                        });
+                        return;
+                    }
+
+                    if (stack) {
+
+                        // getting autoscale topic arn from templateJSON
+                        var topicARN = null;
+                        var autoScaleUsername = null;
+                        var autoScaleRunlist;
+                        var templateObj = JSON.parse(fileData);
+                        var templateResources = templateObj.Resources;
+                        var templateResourcesKeys = Object.keys(templateResources);
+                        for (var j = 0; j < templateResourcesKeys.length; j++) {
+                            var resource = templateResources[templateResourcesKeys[j]];
+
+                            if (resource && resource.Type === 'AWS::AutoScaling::AutoScalingGroup') {
+                                var autoScaleProperties = resource.Properties;
+                                if (autoScaleProperties && autoScaleProperties.NotificationConfigurations && autoScaleProperties.NotificationConfigurations.length) {
+                                    for (var i = 0; i < autoScaleProperties.NotificationConfigurations.length; i++) {
+                                        if (autoScaleProperties.NotificationConfigurations[i].TopicARN) {
+                                            topicARN = autoScaleProperties.NotificationConfigurations[i].TopicARN;
+                                            // getting auto scale instance username
+                                            for (var count = 0; count < self.instances.length; count++) {
+                                                if ('AutoScaleInstanceResource' === self.instances[count].logicalId) {
+                                                    autoScaleUsername = self.instances[count].username;
+                                                    autoScaleRunlist = self.instances[count].runlist;
+                                                    break;
+                                                }
+                                            }
+
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+
+                        CloudFormation.createNew({
+                            orgId: launchParams.orgId,
+                            bgId: launchParams.bgId,
+                            projectId: launchParams.projectId,
+                            envId: launchParams.envId,
+                            stackParameters: self.stackParameters,
+                            templateFile: self.templateFile,
+                            cloudProviderId: self.cloudProviderId,
+                            infraManagerId: self.infraManagerId,
+                            //runlist: version.runlist,
+                            infraManagerType: self.infraMangerType,
+                            stackName: launchParams.stackName,
+                            stackId: stackData.StackId,
+                            status: stack.StackStatus,
+                            users: launchParams.users,
+                            region: self.region,
+                            instanceUsername: self.instanceUsername,
+                            autoScaleTopicArn: topicARN,
+                            autoScaleUsername: autoScaleUsername,
+                            autoScaleRunlist: autoScaleRunlist
+
+
+                        }, function(err, cloudFormation) {
+                            if (err) {
+                                logger.error("Unable to save CloudFormation data in DB", err);
+                                res.send(500, errorResponses.db.error);
+                                return;
+                            }
+                            callback(null, {
+                                stackId: cloudFormation._id
+                            });
+
+                            awsCF.waitForStackCompleteStatus(stackData.StackId, function(err, completeStack) {
+                                if (err) {
+                                    logger.error('Unable to wait for stack status', err);
+                                    if (err.stackStatus) {
+                                        cloudFormation.status = err.stackStatus;
+                                        cloudFormation.save();
+                                    }
+                                    return;
+                                }
+                                cloudFormation.status = completeStack.StackStatus;
+                                cloudFormation.save();
+
+                                awsCF.listAllStackResources(stackData.StackId, function(err, resources) {
+                                    if (err) {
+                                        logger.error('Unable to fetch stack resources', err);
+                                        return;
+                                    }
+                                    var keyPairName;
+                                    var parameters = cloudFormation.stackParameters;
+                                    for (var i = 0; i < parameters.length; i++) {
+                                        if (parameters[i].ParameterKey === 'KeyName') {
+                                            keyPairName = parameters[i].ParameterValue;
+                                            break;
+                                        }
+                                    }
+
+
+                                    var ec2 = new EC2(awsSettings);
+                                    var ec2Resources = {};
+                                    var autoScaleResourceIds = [];
+                                    var autoScaleResourceId = 'temp-Id';
+                                    for (var i = 0; i < resources.length; i++) {
+                                        if (resources[i].ResourceType === 'AWS::EC2::Instance') {
+                                            //instanceIds.push(resources[i].PhysicalResourceId);
+                                            ec2Resources[resources[i].PhysicalResourceId] = resources[i].LogicalResourceId;
+                                        } else if (resources[i].ResourceType === 'AWS::AutoScaling::AutoScalingGroup') {
+                                            autoScaleResourceId = resources[i].PhysicalResourceId;
+                                            autoScaleResourceIds.push(resources[i].PhysicalResourceId);
+                                        }
+                                    }
+                                    if (autoScaleResourceIds.length) {
+                                        cloudFormation.autoScaleResourceIds = autoScaleResourceIds;
+                                        cloudFormation.save();
+                                    }
+
+                                    // fetching autoscale resouce if any
+                                    AwsAutoScaleInstance.findByAutoScaleResourceId(autoScaleResourceId, function(err, autoScaleInstances) {
+                                        if (err) {
+                                            logger.error('Unable to fetch autoscale instance resources', err);
+                                            return;
+                                        }
+                                        for (var i = 0; i < autoScaleInstances.length; i++) {
+                                            //instanceIds.push(autoScaleInstances[0].awsInstanceId);
+                                            ec2Resources[autoScaleInstances[i].awsInstanceId] = 'autoScaleAwsInstance';
+                                        }
+                                        var instanceIds = Object.keys(ec2Resources);
+
+                                        if (instanceIds.length) {
+                                            var instances = [];
+
+                                            ec2.describeInstances(instanceIds, function(err, awsRes) {
+                                                if (err) {
+                                                    logger.error("Unable to get instance details from aws", err);
+                                                    return;
+                                                }
+                                                if (!(awsRes.Reservations && awsRes.Reservations.length)) {
+                                                    return;
+                                                }
+                                                var reservations = awsRes.Reservations;
+                                                for (var k = 0; k < reservations.length; k++) {
+
+                                                    if (reservations[k].Instances && reservations[k].Instances.length) {
+                                                        //instances = reservations[k].Instances;
+                                                        instances = instances.concat(reservations[k].Instances);
+                                                    }
+
+
+                                                }
+                                                logger.debug('Instances length ==>', instances.length, instanceIds);
+                                                //creating jsonAttributesObj ??? WHY
+                                                var jsonAttributesObj = {
+                                                    instances: {}
+                                                };
+
+                                                for (var i = 0; i < instances.length; i++) {
+                                                    jsonAttributesObj.instances[ec2Resources[instances[i].InstanceId]] = instances[i].PublicIpAddress;
+                                                }
+                                                for (var i = 0; i < instances.length; i++) {
+                                                    addAndBootstrapInstance(instances[i], jsonAttributesObj);
+                                                }
+
+                                            });
+
+                                            function addAndBootstrapInstance(instanceData, jsonAttributesObj) {
+
+                                                var keyPairName = instanceData.KeyName;
+                                                AWSKeyPair.getAWSKeyPairByProviderIdAndKeyPairName(cloudFormation.cloudProviderId, keyPairName, function(err, keyPairs) {
+                                                    if (err) {
+                                                        logger.error("Unable to get keypairs", err);
+                                                        return;
+                                                    }
+                                                    if (keyPairs && keyPairs.length) {
+                                                        var keyPair = keyPairs[0];
+                                                        var encryptedPemFileLocation = appConfig.instancePemFilesDir + keyPair._id;
+
+                                                        if (!launchParams.appUrls) {
+                                                            launchParams.appUrls = [];
+                                                        }
+                                                        var appUrls = launchParams.appUrls;
+                                                        if (appConfig.appUrls && appConfig.appUrls.length) {
+                                                            appUrls = appUrls.concat(appConfig.appUrls);
+                                                        }
+                                                        var os = instanceData.Platform;
+                                                        if (os) {
+                                                            os = 'windows';
+                                                        } else {
+                                                            os = 'linux';
+                                                        }
+
+
+                                                        var instanceName;
+
+                                                        var runlist = [];
+                                                        var instanceUsername;
+                                                        var logicalId = ec2Resources[instanceData.InstanceId];
+
+                                                        if (logicalId === 'autoScaleAwsInstance') {
+                                                            runlist = cloudFormation.autoScaleRunlist || [];
+                                                            instanceUsername = cloudFormation.autoScaleUsername || 'ubuntu';
+                                                            instanceName = cloudFormation.stackName + '-AutoScale';
+
+                                                        } else {
+                                                            for (var count = 0; count < self.instances.length; count++) {
+                                                                if (logicalId === self.instances[count].logicalId) {
+                                                                    instanceUsername = self.instances[count].username;
+                                                                    runlist = self.instances[count].runlist;
+                                                                    break;
+                                                                }
+                                                            }
+                                                            instanceName = launchParams.blueprintName;
+                                                        }
+
+                                                        if (instanceData.Tags && instanceData.Tags.length) {
+                                                            for (var j = 0; j < instanceData.Tags.length; j++) {
+                                                                if (instanceData.Tags[j].Key === 'Name') {
+                                                                    instanceName = instanceData.Tags[j].Value;
+                                                                }
+
+                                                            }
+                                                        }
+
+                                                        if (!instanceUsername) {
+                                                            instanceUsername = 'ubuntu'; // hack for default username
+                                                        }
+                                                        var instanceSize;
+                                                        for (var i = 0; i < self.stackParameters.length; i++) {
+                                                            if (self.stackParameters[i].ParameterKey == "InstanceType") {
+                                                                instanceSize = self.stackParameters[i].ParameterValue;
+                                                            }
+                                                        }
+
+                                                        logger.debug("instanceSize: ",instanceSize);
+
+                                                        var instance = {
+                                                            name: instanceName,
+                                                            orgId: launchParams.orgId,
+                                                            orgName: launchParams.orgName,
+                                                            bgId: launchParams.bgId,
+                                                            bgName: launchParams.bgName,
+                                                            projectId: launchParams.projectId,
+                                                            projectName: launchParams.projectName,
+                                                            envId: launchParams.envId,
+                                                            environmentName: launchParams.envName,
+                                                            providerId: cloudFormation.cloudProviderId,
+                                                            providerType: self.cloudProviderType || 'aws',
+                                                            keyPairId: keyPair._id,
+                                                            region: self.region,
+                                                            chefNodeName: instanceData.InstanceId,
+                                                            runlist: runlist,
+                                                            platformId: instanceData.InstanceId,
+                                                            appUrls: appUrls,
+                                                            instanceIP: instanceData.PublicIpAddress || instanceData.PrivateIpAddress,
+                                                            instanceState: instanceData.State.Name,
+                                                            bootStrapStatus: 'waiting',
+                                                            users: launchParams.users,
+                                                            instanceType: instanceSize,
+                                                            catUser: launchParams.sessionUser,
+                                                            hardware: {
+                                                                platform: 'unknown',
+                                                                platformVersion: 'unknown',
+                                                                architecture: 'unknown',
+                                                                memory: {
+                                                                    total: 'unknown',
+                                                                    free: 'unknown',
+                                                                },
+                                                                os: os
+                                                            },
+                                                            credentials: {
+                                                                username: instanceUsername,
+                                                                pemFileLocation: encryptedPemFileLocation,
+                                                            },
+                                                            chef: {
+                                                                serverId: self.infraManagerId,
+                                                                chefNodeName: instanceData.InstanceId
+                                                            },
+                                                            blueprintData: {
+                                                                blueprintId: launchParams.blueprintData._id,
+                                                                blueprintName: launchParams.blueprintData.name,
+                                                                templateId: launchParams.blueprintData.templateId,
+                                                                templateType: launchParams.blueprintData.templateType,
+                                                                templateComponents: launchParams.blueprintData.templateComponents,
+                                                                iconPath: launchParams.blueprintData.iconpath
+                                                            },
+                                                            cloudFormationId: cloudFormation._id
+                                                        };
+
+                                                        logger.debug('Creating instance in catalyst');
+                                                        instancesDao.createInstance(instance, function(err, data) {
+                                                            if (err) {
+                                                                logger.error("Failed to create Instance", err);
+                                                                res.send(500);
+                                                                return;
+                                                            }
+                                                            instance.id = data._id;
+                                                            var timestampStarted = new Date().getTime();
+                                                            var actionLog = instancesDao.insertBootstrapActionLog(instance.id, instance.runlist, launchParams.sessionUser, timestampStarted);
+                                                            var logsReferenceIds = [instance.id, actionLog._id];
+                                                            logsDao.insertLog({
+                                                                referenceId: logsReferenceIds,
+                                                                err: false,
+                                                                log: "Waiting for instance ok state",
+                                                                timestamp: timestampStarted
+                                                            });
+
+                                                            var instanceLog = {
+                                                                actionId: actionLog._id,
+                                                                instanceId: instance.id,
+                                                                orgName: launchParams.orgName,
+                                                                bgName: launchParams.bgName,
+                                                                projectName: launchParams.projectName,
+                                                                envName: launchParams.envName,
+                                                                status: instanceData.State.Name,
+                                                                actionStatus: "waiting",
+                                                                platformId: instanceData.InstanceId,
+                                                                blueprintName: launchParams.blueprintData.name,
+                                                                data: runlist,
+                                                                platform: "unknown",
+                                                                os: self.instanceOS,
+                                                                size: instanceSize,
+                                                                user: launchParams.sessionUser,
+                                                                startedOn: new Date().getTime(),
+                                                                createdOn: new Date().getTime(),
+                                                                providerType: self.cloudProviderType || 'aws',
+                                                                action: "CFT Launch",
+                                                                logs: [{
+                                                                    err: false,
+                                                                    log: "Waiting for instance ok state",
+                                                                    timestamp: new Date().getTime()
+                                                                }]
+                                                            };
+
+                                                            instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                                if (err) {
+                                                                    logger.error("Failed to create or update instanceLog: ", err);
+                                                                }
+                                                            });
+                                                            ec2.waitForEvent(instanceData.InstanceId, 'instanceStatusOk', function(err) {
+                                                                if (err) {
+                                                                    instancesDao.updateInstanceBootstrapStatus(instance.id, 'failed', function(err, updateData) {
+
+                                                                    });
+                                                                    var timestampEnded = new Date().getTime();
+                                                                    logsDao.insertLog({
+                                                                        referenceId: logsReferenceIds,
+                                                                        err: true,
+                                                                        log: "Bootstrap failed",
+                                                                        timestamp: timestampEnded
+                                                                    });
+                                                                    instancesDao.updateActionLog(instance.id, actionLog._id, false, timestampEnded);
+                                                                    instanceLog.actionStatus = "failed";
+                                                                    instanceLog.logs = {
+                                                                        err: true,
+                                                                        log: "Bootstrap failed",
+                                                                        timestamp: new Date().getTime()
+                                                                    };
+                                                                    instanceLog.endedOn = new Date().getTime();
+                                                                    instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                                        if (err) {
+                                                                            logger.error("Failed to create or update instanceLog: ", err);
+                                                                        }
+                                                                    });
+                                                                    return;
+                                                                }
+
+                                                                //decrypting pem file
+                                                                var cryptoConfig = appConfig.cryptoSettings;
+                                                                var tempUncryptedPemFileLoc = appConfig.tempDir + uuid.v4();
+                                                                cryptography.decryptFile(instance.credentials.pemFileLocation, cryptoConfig.decryptionEncoding, tempUncryptedPemFileLoc, cryptoConfig.encryptionEncoding, function(err) {
+                                                                    if (err) {
+                                                                        instancesDao.updateInstanceBootstrapStatus(instance.id, 'failed', function(err, updateData) {
+                                                                            if (err) {
+                                                                                logger.error("Unable to set instance bootstarp status", err);
+                                                                            } else {
+                                                                                logger.debug("Instance bootstrap status set to failed");
+                                                                            }
+                                                                        });
+                                                                        var timestampEnded = new Date().getTime();
+                                                                        logsDao.insertLog({
+                                                                            referenceId: logsReferenceIds,
+                                                                            err: true,
+                                                                            log: "Unable to decrpt pem file. Bootstrap failed",
+                                                                            timestamp: timestampEnded
+                                                                        });
+                                                                        instancesDao.updateActionLog(instance.id, actionLog._id, false, timestampEnded);
+                                                                        instanceLog.actionStatus = "failed";
+                                                                        instanceLog.logs = {
+                                                                            err: true,
+                                                                            log: "Unable to decrpt pem file. Bootstrap failed",
+                                                                            timestamp: new Date().getTime()
+                                                                        };
+                                                                        instanceLog.endedOn = new Date().getTime();
+                                                                        instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                                            if (err) {
+                                                                                logger.error("Failed to create or update instanceLog: ", err);
+                                                                            }
+                                                                        });
+                                                                        if (instance.hardware.os != 'windows')
+                                                                            return;
+                                                                    }
+                                                                    var repoData = {};
+                                                                    repoData['projectId'] = launchParams.blueprintData.projectId;
+                                                                    if (launchParams.blueprintData.nexus.repoName) {
+                                                                        repoData['repoName'] = launchParams.blueprintData.nexus.repoName;
+                                                                    } else if (launchParams.blueprintData.docker.image) {
+                                                                        repoData['repoName'] = launchParams.blueprintData.docker.image;
+                                                                    }
+                                                                    launchParams.blueprintData.getCookBookAttributes(instance.instanceIP, repoData, function(err, jsonAttributes) {
+                                                                        var runlist = instance.runlist;
+                                                                        logger.debug("launchParams.blueprintData.extraRunlist: ", JSON.stringify(launchParams.blueprintData.extraRunlist));
+                                                                        if (launchParams.blueprintData.extraRunlist) {
+                                                                            runlist = launchParams.blueprintData.extraRunlist.concat(instance.runlist);
+                                                                        }
+
+                                                                        logger.debug("runlist: ", JSON.stringify(runlist));
+                                                                        launchParams.infraManager.bootstrapInstance({
+                                                                            instanceIp: instance.instanceIP,
+                                                                            pemFilePath: tempUncryptedPemFileLoc,
+                                                                            runlist: runlist,
+                                                                            instanceUsername: instance.credentials.username,
+                                                                            nodeName: instance.chef.chefNodeName,
+                                                                            environment: launchParams.envName,
+                                                                            instanceOS: instance.hardware.os,
+                                                                            //jsonAttributes: jsonAttributesObj // This attribute not using,may use in future
+                                                                            jsonAttributes: jsonAttributes
+                                                                        }, function(err, code) {
+
+                                                                            fileIo.removeFile(tempUncryptedPemFileLoc, function(err) {
+                                                                                if (err) {
+                                                                                    logger.error("Unable to delete temp pem file =>", err);
+                                                                                } else {
+                                                                                    logger.debug("temp pem file deleted =>", err);
+                                                                                }
+                                                                            });
+
+
+                                                                            logger.error('process stopped ==> ', err, code);
+                                                                            if (err) {
+                                                                                logger.error("knife launch err ==>", err);
+                                                                                instancesDao.updateInstanceBootstrapStatus(instance.id, 'failed', function(err, updateData) {
+
+                                                                                });
+                                                                                var timestampEnded = new Date().getTime();
+                                                                                logsDao.insertLog({
+                                                                                    referenceId: logsReferenceIds,
+                                                                                    err: true,
+                                                                                    log: "Bootstrap failed",
+                                                                                    timestamp: timestampEnded
+                                                                                });
+                                                                                instancesDao.updateActionLog(instance.id, actionLog._id, false, timestampEnded);
+                                                                                instanceLog.logs = {
+                                                                                    err: true,
+                                                                                    log: "Bootstrap failed",
+                                                                                    timestamp: new Date().getTime()
+                                                                                };
+                                                                                instanceLog.actionStatus = "failed";
+                                                                                instanceLog.endedOn = new Date().getTime();
+                                                                                instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                                                    if (err) {
+                                                                                        logger.error("Failed to create or update instanceLog: ", err);
+                                                                                    }
+                                                                                });
+
+                                                                            } else {
+                                                                                if (code == 0) {
+                                                                                    instancesDao.updateInstanceBootstrapStatus(instance.id, 'success', function(err, updateData) {
+                                                                                        if (err) {
+                                                                                            logger.error("Unable to set instance bootstarp status. code 0", err);
+                                                                                        } else {
+                                                                                            logger.debug("Instance bootstrap status set to success");
+                                                                                        }
+                                                                                    });
+                                                                                    var timestampEnded = new Date().getTime();
+                                                                                    logsDao.insertLog({
+                                                                                        referenceId: logsReferenceIds,
+                                                                                        err: false,
+                                                                                        log: "Instance Bootstraped successfully",
+                                                                                        timestamp: timestampEnded
+                                                                                    });
+                                                                                    instancesDao.updateActionLog(instance.id, actionLog._id, true, timestampEnded);
+                                                                                    instanceLog.logs = {
+                                                                                        err: false,
+                                                                                        log: "Instance Bootstraped successfully",
+                                                                                        timestamp: new Date().getTime()
+                                                                                    };
+                                                                                    instanceLog.actionStatus = "success";
+                                                                                    instanceLog.endedOn = new Date().getTime();
+
+                                                                                    launchParams.infraManager.getNode(instance.chefNodeName, function(err, nodeData) {
+                                                                                        if (err) {
+                                                                                            logger.error("Failed chef.getNode", err);
+                                                                                            return;
+                                                                                        }
+                                                                                        var hardwareData = {};
+                                                                                        hardwareData.architecture = nodeData.automatic.kernel.machine;
+                                                                                        hardwareData.platform = nodeData.automatic.platform;
+                                                                                        hardwareData.platformVersion = nodeData.automatic.platform_version;
+                                                                                        hardwareData.memory = {
+                                                                                            total: 'unknown',
+                                                                                            free: 'unknown'
+                                                                                        };
+                                                                                        if (nodeData.automatic.memory) {
+                                                                                            hardwareData.memory.total = nodeData.automatic.memory.total;
+                                                                                            hardwareData.memory.free = nodeData.automatic.memory.free;
+                                                                                        }
+                                                                                        hardwareData.os = instance.hardware.os;
+                                                                                        instanceLog.platform=nodeData.automatic.platform;
+                                                                                        instanceLog.os=instance.hardware.os;
+                                                                                        instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                                                            if (err) {
+                                                                                                logger.error("Failed to create or update instanceLog: ", err);
+                                                                                            }
+                                                                                        });
+                                                                                        instancesDao.setHardwareDetails(instance.id, hardwareData, function(err, updateData) {
+                                                                                            if (err) {
+                                                                                                logger.error("Unable to set instance hardware details  code (setHardwareDetails)", err);
+                                                                                            } else {
+                                                                                                logger.debug("Instance hardware details set successessfully");
+                                                                                            }
+                                                                                        });
+                                                                                        //Checking docker status and updating
+                                                                                        var _docker = new Docker();
+                                                                                        _docker.checkDockerStatus(instance.id,
+                                                                                            function(err, retCode) {
+                                                                                                if (err) {
+                                                                                                    logger.error("Failed _docker.checkDockerStatus", err);
+                                                                                                    res.send(500);
+                                                                                                    return;
+                                                                                                    //res.end('200');
+
+                                                                                                }
+                                                                                                logger.debug('Docker Check Returned:' + retCode);
+                                                                                                if (retCode == '0') {
+                                                                                                    instancesDao.updateInstanceDockerStatus(instance.id, "success", '', function(data) {
+                                                                                                        logger.debug('Instance Docker Status set to Success');
+                                                                                                    });
+
+                                                                                                }
+                                                                                            });
+
+                                                                                    });
+
+                                                                                } else {
+                                                                                    instancesDao.updateInstanceBootstrapStatus(instance.id, 'failed', function(err, updateData) {
+                                                                                        if (err) {
+                                                                                            logger.error("Unable to set instance bootstarp status code != 0", err);
+                                                                                        } else {
+                                                                                            logger.debug("Instance bootstrap status set to failed");
+                                                                                        }
+                                                                                    });
+                                                                                    var timestampEnded = new Date().getTime();
+                                                                                    logsDao.insertLog({
+                                                                                        referenceId: logsReferenceIds,
+                                                                                        err: false,
+                                                                                        log: "Bootstrap Failed",
+                                                                                        timestamp: timestampEnded
+                                                                                    });
+                                                                                    instancesDao.updateActionLog(instance.id, actionLog._id, false, timestampEnded);
+                                                                                    instanceLog.logs = {
+                                                                                        err: true,
+                                                                                        log: "Bootstrap Failed",
+                                                                                        timestamp: new Date().getTime()
+                                                                                    };
+                                                                                    instanceLog.actionStatus = "failed";
+                                                                                    instanceLog.endedOn = new Date().getTime();
+                                                                                    instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                                                        if (err) {
+                                                                                            logger.error("Failed to create or update instanceLog: ", err);
+                                                                                        }
+                                                                                    });
+                                                                                }
+                                                                            }
+
+                                                                        }, function(stdOutData) {
+
+                                                                            logsDao.insertLog({
+                                                                                referenceId: logsReferenceIds,
+                                                                                err: false,
+                                                                                log: stdOutData.toString('ascii'),
+                                                                                timestamp: new Date().getTime()
+                                                                            });
+                                                                            instanceLog.logs = {
+                                                                                err: false,
+                                                                                log: stdOutData.toString('ascii'),
+                                                                                timestamp: new Date().getTime()
+                                                                            };
+                                                                            instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                                                if (err) {
+                                                                                    logger.error("Failed to create or update instanceLog: ", err);
+                                                                                }
+                                                                            });
+
+                                                                        }, function(stdErrData) {
+
+                                                                            //retrying 4 times before giving up.
+                                                                            logsDao.insertLog({
+                                                                                referenceId: logsReferenceIds,
+                                                                                err: true,
+                                                                                log: stdErrData.toString('ascii'),
+                                                                                timestamp: new Date().getTime()
+                                                                            });
+                                                                            instanceLog.logs = {
+                                                                                err: true,
+                                                                                log: stdErrData.toString('ascii'),
+                                                                                timestamp: new Date().getTime()
+                                                                            };
+                                                                            instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                                                if (err) {
+                                                                                    logger.error("Failed to create or update instanceLog: ", err);
+                                                                                }
+                                                                            });
+
+
+                                                                        });
+                                                                    });
+
+                                                                });
+                                                            });
+                                                        });
+                                                    } else {
+                                                        logger.error('keypair with name : ' + keyPairName + ' not found');
+                                                    }
+                                                });
+
+
+                                            }
+
+                                        }
+                                    });
+
+                                });
+
+                            });
+
+                        });
+
+                    } else {
+                        callback({
+                            "message": "Error occured while fetching stack status"
+                        });
+                        return;
+
+                    }
+
+                });
+            });
+        });
+    });
+}
+
+function launchAzureArmTemplateBlueprint(launchParams,callback){
+    var blueprintData = launchParams.blueprintData;
+    azureProvider.getAzureCloudProviderById(blueprintData.providerDetails.id, function(err, providerdata) {
+        if (err) {
+            callback(err,null);
+            return;
+        }
+        providerdata = JSON.parse(providerdata);
+        var settings = appConfig;
+        var pemFile = settings.instancePemFilesDir + providerdata._id + providerdata.pemFileName;
+        var keyFile = settings.instancePemFilesDir + providerdata._id + providerdata.keyFileName;
+        
+        var cryptConfig = appConfig.cryptoSettings;
+        var cryptography = new Cryptography(cryptConfig.algorithm, cryptConfig.password);
+
+        var uniqueVal = uuid.v4().split('-')[0];
+        
+        var templateFile = blueprintData.templateFile;
+        var settings = appConfig.chef;
+        var chefRepoPath = settings.chefReposLocation;
+        fileIo.readFile(chefRepoPath + 'catalyst_files/' + templateFile, function(err, fileData) {
+            if (err) {
+                callback(err,null);
+                return;
+            }
+
+            if (typeof fileData === 'object') {
+                fileData = fileData.toString('ascii');
+            }
+            fileData = JSON.parse(fileData);
+            
+            if (!launchParams.appUrls) {
+                launchParams.appUrls = [];
+            }
+            var appUrls = launchParams.appUrls;
+            if (appConfig.appUrls && appConfig.appUrls.length) {
+                appUrls = appUrls.concat(appConfig.appUrls);
+            }
+
+            var options = {
+                subscriptionId: providerdata.subscriptionId,
+                clientId: providerdata.clientId,
+                clientSecret: providerdata.clientSecret,
+                tenant: providerdata.tenant
+            };
+
+            var arm = new ARM(options);
+
+            function addAndBootstrapInstance(instanceData) {
+
+
+                var credentials = {
+                    username: instanceData.username,
+                    password: instanceData.password
+                };
+
+                credentialcryptography.encryptCredential(credentials, function(err, encryptedCredentials) {
+                    if (err) {
+                        logger.error('azure encryptCredential error', err);
+                        callback({
+                            message: "Unable to encryptCredential"
+                        });
+                        return;
+                    }
+                    logger.debug('Credentials encrypted..');
+
+                    //Creating instance in catalyst
+
+                    var instance = {
+                        name: instanceData.name,
+                        orgId: launchParams.orgId,
+                        orgName: launchParams.orgName,
+                        bgId: launchParams.bgId,
+                        bgName: launchParams.bgName,
+                        projectId: launchParams.projectId,
+                        projectName: launchParams.projectName,
+                        envId: launchParams.envId,
+                        environmentName: launchParams.envName,
+                        providerId: self.cloudProviderId,
+                        providerType: 'azure',
+                        keyPairId: 'azure',
+                        region: self.region,
+                        chefNodeName: instanceData.name,
+                        runlist: instanceData.runlist,
+                        platformId: instanceData.name,
+                        appUrls: appUrls,
+                        instanceIP: instanceData.ip,
+                        instanceState: 'running',
+                        bootStrapStatus: 'waiting',
+                        users: launchParams.users,
+                        instanceType: self.instanceType,
+                        catUser: launchParams.sessionUser,
+                        hardware: {
+                            platform: 'unknown',
+                            platformVersion: 'unknown',
+                            architecture: 'unknown',
+                            memory: {
+                                total: 'unknown',
+                                free: 'unknown',
+                            },
+                            os: instanceData.os
+                        },
+                        credentials: {
+                            username: encryptedCredentials.username,
+                            password: encryptedCredentials.password
+                        },
+                        chef: {
+                            serverId: self.infraManagerId,
+                            chefNodeName: instanceData.name
+                        },
+                        blueprintData: {
+                            blueprintId: launchParams.blueprintData._id,
+                            blueprintName: launchParams.blueprintData.name,
+                            templateId: launchParams.blueprintData.templateId,
+                            templateType: launchParams.blueprintData.templateType,
+                            iconPath: launchParams.blueprintData.iconpath
+                        },
+                        armId: instanceData.armId
+
+                    };
+                    logger.debug('Creating instance in catalyst');
+                    instancesDao.createInstance(instance, function(err, data) {
+                        if (err) {
+                            logger.error("Failed to create Instance", err);
+                            callback({
+                                message: "Unable to create instance in db"
+                            })
+                            return;
+                        }
+                        instance.id = data._id;
+                        var timestampStarted = new Date().getTime();
+                        var actionLog = instancesDao.insertBootstrapActionLog(instance.id, instance.runlist, launchParams.sessionUser, timestampStarted);
+                        var logsReferenceIds = [instance.id, actionLog._id];
+                        var instanceLog = {
+                            actionId: actionLog._id,
+                            instanceId: instance.id,
+                            orgName: launchParams.orgName,
+                            bgName: launchParams.bgName,
+                            projectName: launchParams.projectName,
+                            envName: launchParams.envName,
+                            status: "running",
+                            actionStatus: "waiting",
+                            platformId: instanceData.name,
+                            blueprintName: launchParams.blueprintData.name,
+                            data: instanceData.runlist,
+                            platform: "unknown",
+                            os: instanceData.os,
+                            size: self.instanceType,
+                            user: launchParams.sessionUser,
+                            startedOn: new Date().getTime(),
+                            createdOn: new Date().getTime(),
+                            providerType: "azure",
+                            action: "Bootstrap",
+                            logs: [{
+                                err: false,
+                                log: "Waiting for instance ok state",
+                                timestamp: new Date().getTime()
+                            }]
+                        };
+
+                        instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                            if (err) {
+                                logger.error("Failed to create or update instanceLog: ", err);
+                            }
+                        });
+                        logsDao.insertLog({
+                            referenceId: logsReferenceIds,
+                            err: false,
+                            log: "Waiting for instance ok state",
+                            timestamp: timestampStarted
+                        });
+
+
+                        //decrypting pem file
+                        var cryptoConfig = appConfig.cryptoSettings;
+                        var tempUncryptedPemFileLoc = appConfig.tempDir + uuid.v4();
+                        credentialcryptography.decryptCredential(instance.credentials, function(err, decryptedCredential) {
+                            if (err) {
+                                instancesDao.updateInstanceBootstrapStatus(instance.id, 'failed', function(err, updateData) {
+                                    if (err) {
+                                        logger.error("Unable to set instance bootstarp status", err);
+                                    } else {
+                                        logger.debug("Instance bootstrap status set to failed");
+                                    }
+                                });
+                                var timestampEnded = new Date().getTime();
+                                logsDao.insertLog({
+                                    referenceId: logsReferenceIds,
+                                    err: true,
+                                    log: "Unable to decrpt pem file. Bootstrap failed",
+                                    timestamp: timestampEnded
+                                });
+                                instancesDao.updateActionLog(instance.id, actionLog._id, false, timestampEnded);
+                                instanceLog.logs = {
+                                    err: true,
+                                    log: "Unable to decrpt pem file. Bootstrap failed",
+                                    timestamp: new Date().getTime()
+                                };
+                                instanceLog.endedOn = new Date().getTime();
+                                instanceLog.actionStatus = "failed";
+                                instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                    if (err) {
+                                        logger.error("Failed to create or update instanceLog: ", err);
+                                    }
+                                });
+                                if (instance.hardware.os != 'windows')
+                                    return;
+                            }
+                            var repoData = {};
+                            repoData['projectId'] = launchParams.blueprintData.projectId;
+                            if (launchParams.blueprintData.nexus.repoName) {
+                                repoData['repoName'] = launchParams.blueprintData.nexus.repoName;
+                            } else if (launchParams.blueprintData.docker.image) {
+                                repoData['repoName'] = launchParams.blueprintData.docker.image;
+                            }
+                            launchParams.blueprintData.getCookBookAttributes(instance.instanceIP, repoData, function(err, jsonAttributes) {
+                                var runlist = instance.runlist;
+                                logger.debug("launchParams.blueprintData.extraRunlist: ", JSON.stringify(launchParams.blueprintData.extraRunlist));
+                                if (launchParams.blueprintData.extraRunlist) {
+                                    runlist = launchParams.blueprintData.extraRunlist.concat(instance.runlist);
+                                }
+
+                                logger.debug("runlist: ", JSON.stringify(runlist));
+                                launchParams.infraManager.bootstrapInstance({
+                                    instanceIp: instance.instanceIP,
+                                    instancePassword: decryptedCredential.password,
+                                    runlist: runlist,
+                                    instanceUsername: instance.credentials.username,
+                                    nodeName: instance.chef.chefNodeName,
+                                    environment: launchParams.envName,
+                                    instanceOS: instance.hardware.os,
+                                    jsonAttributes: jsonAttributes
+                                }, function(err, code) {
+
+                                    logger.error('process stopped ==> ', err, code);
+                                    if (err) {
+                                        logger.error("knife launch err ==>", err);
+                                        instancesDao.updateInstanceBootstrapStatus(instance.id, 'failed', function(err, updateData) {
+
+                                        });
+                                        var timestampEnded = new Date().getTime();
+                                        logsDao.insertLog({
+                                            referenceId: logsReferenceIds,
+                                            err: true,
+                                            log: "Bootstrap failed",
+                                            timestamp: timestampEnded
+                                        });
+                                        instancesDao.updateActionLog(instance.id, actionLog._id, false, timestampEnded);
+                                        instanceLog.logs = {
+                                            err: true,
+                                            log: "Bootstrap failed",
+                                            timestamp: new Date().getTime()
+                                        };
+                                        instanceLog.actionStatus = "failed";
+                                        instanceLog.endedOn = new Date().getTime();
+                                        instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                            if (err) {
+                                                logger.error("Failed to create or update instanceLog: ", err);
+                                            }
+                                        });
+
+                                    } else {
+                                        if (code == 0) {
+                                            instancesDao.updateInstanceBootstrapStatus(instance.id, 'success', function(err, updateData) {
+                                                if (err) {
+                                                    logger.error("Unable to set instance bootstarp status. code 0", err);
+                                                } else {
+                                                    logger.debug("Instance bootstrap status set to success");
+                                                }
+                                            });
+                                            var timestampEnded = new Date().getTime();
+                                            logsDao.insertLog({
+                                                referenceId: logsReferenceIds,
+                                                err: false,
+                                                log: "Instance Bootstraped successfully",
+                                                timestamp: timestampEnded
+                                            });
+                                            instancesDao.updateActionLog(instance.id, actionLog._id, true, timestampEnded);
+
+                                            instanceLog.logs = {
+                                                err: false,
+                                                log: "Instance Bootstraped successfully",
+                                                timestamp: new Date().getTime()
+                                            };
+                                            instanceLog.actionStatus = "success";
+                                            instanceLog.endedOn = new Date().getTime();
+                                            launchParams.infraManager.getNode(instance.chefNodeName, function(err, nodeData) {
+                                                if (err) {
+                                                    logger.error("Failed chef.getNode", err);
+                                                    return;
+                                                }
+                                                instanceLog.platform = nodeData.automatic.platform;
+                                                instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                    if (err) {
+                                                        logger.error("Failed to create or update instanceLog: ", err);
+                                                    }
+                                                });
+                                                var hardwareData = {};
+                                                hardwareData.architecture = nodeData.automatic.kernel.machine;
+                                                hardwareData.platform = nodeData.automatic.platform;
+                                                hardwareData.platformVersion = nodeData.automatic.platform_version;
+                                                hardwareData.memory = {
+                                                    total: 'unknown',
+                                                    free: 'unknown'
+                                                };
+                                                if (nodeData.automatic.memory) {
+                                                    hardwareData.memory.total = nodeData.automatic.memory.total;
+                                                    hardwareData.memory.free = nodeData.automatic.memory.free;
+                                                }
+                                                hardwareData.os = instance.hardware.os;
+                                                instanceLog.platform=nodeData.automatic.platform;
+                                                instanceLog.os=instance.hardware.os;
+                                                instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                    if (err) {
+                                                        logger.error("Failed to create or update instanceLog: ", err);
+                                                    }
+                                                });
+                                                instancesDao.setHardwareDetails(instance.id, hardwareData, function(err, updateData) {
+                                                    if (err) {
+                                                        logger.error("Unable to set instance hardware details  code (setHardwareDetails)", err);
+                                                    } else {
+                                                        logger.debug("Instance hardware details set successessfully");
+                                                    }
+                                                });
+                                                //Checking docker status and updating
+                                                var _docker = new Docker();
+                                                _docker.checkDockerStatus(instance.id,
+                                                    function(err, retCode) {
+                                                        if (err) {
+                                                            logger.error("Failed _docker.checkDockerStatus", err);
+                                                            return;
+
+
+                                                        }
+                                                        logger.debug('Docker Check Returned:' + retCode);
+                                                        if (retCode == '0') {
+                                                            instancesDao.updateInstanceDockerStatus(instance.id, "success", '', function(data) {
+                                                                logger.debug('Instance Docker Status set to Success');
+                                                            });
+
+                                                        }
+                                                    });
+
+                                            });
+
+                                        } else {
+                                            instancesDao.updateInstanceBootstrapStatus(instance.id, 'failed', function(err, updateData) {
+                                                if (err) {
+                                                    logger.error("Unable to set instance bootstarp status code != 0", err);
+                                                } else {
+                                                    logger.debug("Instance bootstrap status set to failed");
+                                                }
+                                            });
+                                            var timestampEnded = new Date().getTime();
+                                            logsDao.insertLog({
+                                                referenceId: logsReferenceIds,
+                                                err: false,
+                                                log: "Bootstrap Failed",
+                                                timestamp: timestampEnded
+                                            });
+                                            instancesDao.updateActionLog(instance.id, actionLog._id, false, timestampEnded);
+                                            instanceLog.logs = {
+                                                err: true,
+                                                log: "Bootstrap Failed",
+                                                timestamp: new Date().getTime()
+                                            };
+                                            instanceLog.actionStatus = "failed";
+                                            instanceLog.endedOn = new Date().getTime();
+                                            instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                                if (err) {
+                                                    logger.error("Failed to create or update instanceLog: ", err);
+                                                }
+                                            });
+                                        }
+                                    }
+
+                                }, function(stdOutData) {
+
+                                    logsDao.insertLog({
+                                        referenceId: logsReferenceIds,
+                                        err: false,
+                                        log: stdOutData.toString('ascii'),
+                                        timestamp: new Date().getTime()
+                                    });
+                                    instanceLog.logs = {
+                                        err: false,
+                                        log: stdOutData.toString('ascii'),
+                                        timestamp: new Date().getTime()
+                                    };
+                                    instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                        if (err) {
+                                            logger.error("Failed to create or update instanceLog: ", err);
+                                        }
+                                    });
+
+                                }, function(stdErrData) {
+
+                                    //retrying 4 times before giving up.
+                                    logsDao.insertLog({
+                                        referenceId: logsReferenceIds,
+                                        err: true,
+                                        log: stdErrData.toString('ascii'),
+                                        timestamp: new Date().getTime()
+                                    });
+
+                                    instanceLog.logs = {
+                                        err: true,
+                                        log: stdErrData.toString('ascii'),
+                                        timestamp: new Date().getTime()
+                                    };
+                                    instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function(err, logData) {
+                                        if (err) {
+                                            logger.error("Failed to create or update instanceLog: ", err);
+                                        }
+                                    });
+
+
+                                });
+                            });
+
+                        });
+
+                    });
+
+                });
+
+            }
+
+            function getVMIPAddress(networksInterfaces, count, callback) {
+                var networkId = networksInterfaces[count].id;
+                arm.getNetworkInterface({
+                    id: networkId
+                }, function(err, networkResourceData) {
+                    count++;
+                    if (err) {
+                        logger.error("Unable to fetch azure vm network interface");
+                        callback(err, null);
+                        return;
+                    }
+                    if (networkResourceData.properties.ipConfigurations) {
+                        var ipConfigurations = networkResourceData.properties.ipConfigurations;
+                        var ipAddressIdFound = false
+                        for (k = 0; k < ipConfigurations.length; k++) {
+                            if (ipConfigurations[k].properties && ipConfigurations[k].properties.publicIPAddress) {
+                                ipAddressIdFound = true;
+                                var ipAddressId = ipConfigurations[k].properties.publicIPAddress.id;
+                                arm.getPublicIpAddress({
+                                    id: ipAddressId
+                                }, function(err, publicIPAddressResource) {
+                                    logger.debug('resource ===>', JSON.stringify(publicIPAddressResource));
+                                    if (err) {
+                                        logger.error("Unable to fetch azure vm ipaddress");
+                                        callback(err, null);
+                                        return;
+                                    }
+                                    callback(null, {
+                                        ip: publicIPAddressResource.properties.ipAddress
+                                    });
+                                    return;
+
+                                });
+                            }
+                        }
+                        if (!ipAddressIdFound) {
+                            if (networksInterfaces.length === count) {
+                                callback(null, null);
+                            } else {
+                                getVMIPAddress(networksInterfaces, count, callback);
+                            }
+
+                        }
+                    } else {
+                        if (networksInterfaces.length === count) {
+                            callback(null, null);
+                        } else {
+                            getVMIPAddress(networksInterfaces, count, callback);
+                        }
+
+                    }
+                });
+
+
+            }
+
+            function processVM(vmResource, armId) {
+                var vmName = vmResource.resourceName;
+                var dependsOn = vmResource.dependsOn;
+                var ipFound = false;
+                arm.getDeploymentVMData({
+                    name: vmName,
+                    resourceGroup: self.resourceGroup
+                }, function(err, vmData) {
+                    if (err) {
+                        logger.error("Unable to fetch azure vm data");
+                        return;
+                    }
+
+                    logger.debug('vmdata ==>', JSON.stringify(vmData));
+
+                    var networkInterfaces = vmData.properties.networkProfile.networkInterfaces;
+
+                    getVMIPAddress(networkInterfaces, 0, function(err, ipAddress) {
+                        if (err) {
+                            logger.error("Unable to fetch azure vm ipaddress");
+                            return;
+                        }
+                        var osType = 'linux';
+                        if (vmData.properties.storageProfile && vmData.properties.storageProfile.osDisk && vmData.properties.storageProfile.osDisk) {
+                            if (vmData.properties.storageProfile.osDisk.osType) {
+                                if (vmData.properties.storageProfile.osDisk.osType === 'Linux') {
+                                    osType = 'linux';
+                                } else {
+                                    osType = "windows";
+                                }
+                            }
+                        }
+
+                        var username = vmData.properties.osProfile.adminUsername;
+                        var password;
+                        var runlist = [];
+                        var instances = self.instances;
+
+                        if (instances) {
+                            password = instances[vmName].password;
+                            runlist = instances[vmName].runlist;
+                        }
+
+
+
+                        addAndBootstrapInstance({
+                            name: vmName,
+                            username: username,
+                            password: password,
+                            runlist: runlist,
+                            ip: ipAddress.ip,
+                            os: osType,
+                            armId: armId
+                        });
+
+
+                    });
+                });
+
+            }
+
+
+
+            arm.deployTemplate({
+                name: launchParams.stackName,
+                parameters: JSON.parse(JSON.stringify(self.parameters)),
+                template: fileData,
+                resourceGroup: self.resourceGroup
+            }, function(err, stackData) {
+                if (err) {
+                    logger.error("Unable to launch CloudFormation Stack", err);
+                    callback({
+                        message: "Unable to launch ARM Template"
+                    });
+                    return;
+                }
+
+
+                arm.getDeployedTemplate({
+                    name: launchParams.stackName,
+                    resourceGroup: self.resourceGroup
+                }, function(err, deployedTemplateData) {
+                    if (err) {
+                        logger.error("Unable to get arm deployed template", err);
+                        callback({
+                            message: "Error occured while fetching deployed template status"
+                        });
+                        return;
+                    }
+
+
+
+                    AzureARM.createNew({
+                        orgId: launchParams.orgId,
+                        bgId: launchParams.bgId,
+                        projectId: launchParams.projectId,
+                        envId: launchParams.envId,
+                        parameters: self.parameters,
+                        templateFile: self.templateFile,
+                        cloudProviderId: self.cloudProviderId,
+                        infraManagerId: self.infraManagerId,
+                        //runlist: version.runlist,
+                        infraManagerType: 'chef',
+                        deploymentName: launchParams.stackName,
+                        deploymentId: deployedTemplateData.id,
+                        status: deployedTemplateData.properties.provisioningState,
+                        users: launchParams.users,
+                        resourceGroup: self.resourceGroup,
+
+                    }, function(err, azureArmDeployement) {
+                        if (err) {
+                            logger.error("Unable to save arm data in DB", err);
+                            callback({
+                                message: "unable to save arm in db"
+                            });
+                            return;
+                        }
+                        callback(null, {
+                            armId: azureArmDeployement._id
+                        });
+                        arm.waitForDeploymentCompleteStatus({
+                            name: launchParams.stackName,
+                            resourceGroup: self.resourceGroup
+                        }, function(err, deployedTemplateData) {
+                            if (err) {
+                                logger.error('Unable to wait for deployed template status', err);
+                                if (err.status) {
+                                    azureArmDeployement.status = err.status;
+                                    azureArmDeployement.save();
+                                }
+                                return;
+                            }
+                            azureArmDeployement.status = deployedTemplateData.properties.provisioningState;
+                            azureArmDeployement.save();
+                            logger.debug('deployed ==>', JSON.stringify(deployedTemplateData));
+                            var dependencies = deployedTemplateData.properties.dependencies;
+                            for (var i = 0; i < dependencies.length; i++) {
+                                var resource = dependencies[i];
+                                if (resource.resourceType == 'Microsoft.Compute/virtualMachines') {
+                                    logger.debug('resource name ==>', resource.resourceName);
+                                    processVM(resource, azureArmDeployement.id);
+                                }
+                            }
+                        });
+                    });
+                });
+            });
+        });
+    });
+}

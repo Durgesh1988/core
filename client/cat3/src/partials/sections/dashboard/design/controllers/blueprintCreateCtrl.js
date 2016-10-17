@@ -509,12 +509,12 @@
                     });
                 },
                 submit : function() {
-                    var blueprintCreateJSON = {
+                 /*   var blueprintCreateJSON = {
                         templateComponents:'component0',
                         dockercontainerpathstitle: '',
                         dockerlaunchparameters: '',
                         dockerreponame: '',
-                        /*dockercompose : [],*/
+                        /!*dockercompose : [],*!/
                         chefServerId:$scope.getChefServerId,
                         instanceType:blueprintCreation.newEnt.instanceType,
                         instanceOS:blueprintCreation.newEnt.osListing,
@@ -532,7 +532,20 @@
                         region:blueprintCreation.newEnt.region,
                         templateType:$state.params.templateObj.templatetype,
                         name:blueprintCreation.newEnt.blueprintName
-                    };
+                    };*/
+
+                    var blueprintCreateJSON = {
+                        masterDetails:{
+                            orgId:$scope.bpCreate.newEnt.orgList.orgid,
+                            orgName:$scope.bpCreate.newEnt.orgList.name
+                        },
+                        blueprintName:blueprintCreation.newEnt.blueprintName,
+                        templateDetails:{
+                            id:$state.params.templateObj.templatetype,
+                            type:$state.params.templateObj.templateId,
+                            name:$state.params.templateObj.templateName
+                        }
+                    }
 
                     if($scope.bpTypeName === 'OSImage'){
                         blueprintCreateJSON.templateId = $scope.templateSelected.name;
@@ -563,15 +576,18 @@
 
                     if($scope.bpTypeName === 'Docker'){
                         blueprintCreateJSON.blueprintType = 'docker';
-                        var dockercompose = [];
+                        var dockerCompose = [];
                         angular.forEach(blueprintCreation.newEnt.cftModel , function(value, key) {
                             var parameterObj = {
                                 ParameterKey: key,
                                 ParameterValue: value.Default
                             }
                             cftParameters.push(parameterObj);
-                            blueprintCreateJSON.dockercompose = dockercompose;
+                            blueprintCreateJSON.blueprintConfig = dockerCompose;
                         });
+
+                        console.log(JSON.stringify(blueprintCreateJSON));
+                        return false;
                     }
 
                     if($scope.bpTypeName === 'CloudFormation'){

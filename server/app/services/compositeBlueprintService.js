@@ -38,8 +38,6 @@ var AWSProvider = require('_pr/model/classes/masters/cloudprovider/awsCloudProvi
 var VMImage = require('_pr/model/classes/masters/vmImage.js');
 var AWSKeyPair = require('_pr/model/classes/masters/cloudprovider/keyPair.js');
 var credentialcryptography = require('_pr/lib/credentialcryptography');
-var InstanceBlueprint = require('_pr/model/blueprint/blueprint-types/instance-blueprint/instance-blueprint');
-
 var appConfig = require('_pr/config');
 var instanceLogModel = require('_pr/model/log-trail/instanceLog.js');
 

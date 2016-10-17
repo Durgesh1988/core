@@ -2356,7 +2356,7 @@ module.exports.setRoutes = function(app, sessionVerification) {
                                 instancesDao.getInstancesByOrgBgProjectAndEnvId(jsonData, callback);
                             },
                             blueprints: function(callback) {
-                                Blueprints.getBlueprintsByOrgBgProjectProvider(jsonData, callback);
+                                Blueprints.getBlueprintByOrgBgProjectProviderType(jsonData, callback);
                             },
                             stacks: function(callback) {
                                 CloudFormation.findByOrgBgProjectAndEnvId(jsonData, callback);

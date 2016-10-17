@@ -21,49 +21,7 @@ var mongoose = require('mongoose');
 var extend = require('mongoose-schema-extend');
 var ObjectId = require('mongoose').Types.ObjectId;
 var mongoosePaginate = require('mongoose-paginate');
-
-var Chef = require('_pr/lib/chef.js');
-var configmgmtDao = require('_pr/model/d4dmasters/configmgmt');
-var appConfig = require('_pr/config');
-
 var schemaValidator = require('_pr/model/utils/schema-validator');
-
-var uniqueValidator = require('mongoose-unique-validator');
-
-var DockerBlueprint = require('./blueprint-types/docker-blueprint/docker-blueprint');
-var InstanceBlueprint = require('./blueprint-types/instance-blueprint/instance-blueprint');
-var OpenstackBlueprint = require('./blueprint-types/instance-blueprint/openstack-blueprint/openstack-blueprint');
-var AzureBlueprint = require('./blueprint-types/instance-blueprint/azure-blueprint/azure-blueprint');
-var VmwareBlueprint = require('./blueprint-types/instance-blueprint/vmware-blueprint/vmware-blueprint');
-
-var CloudFormationBlueprint = require('./blueprint-types/cloud-formation-blueprint/cloud-formation-blueprint');
-var ARMTemplateBlueprint = require('./blueprint-types/arm-template-blueprint/arm-template-blueprint');
-var utils = require('../classes/utils/utils.js');
-var nexus = require('_pr/lib/nexus.js');
-var masterUtil = require('_pr/lib/utils/masterUtil.js');
-
-var AWSKeyPair = require('../../model/classes/masters/cloudprovider/keyPair.js');
-var VMImage = require('../../model/classes/masters/vmImage.js');
-var AWSProvider = require('_pr/model/classes/masters/cloudprovider/awsCloudProvider.js');
-var AzureProvider = require('_pr/model/classes/masters/cloudprovider/azureCloudProvider.js');
-var VmwareProvider = require('_pr/model/classes/masters/cloudprovider/vmwareCloudProvider.js');
-var OpenStackProvider = require('_pr/model/classes/masters/cloudprovider/openstackCloudProvider.js');
-
-
-var uuid = require('node-uuid');
-var AppData = require('_pr/model/app-deploy/app-data');
-
-var BLUEPRINT_TYPE = {
-    DOCKER: 'docker',
-    AWS_CLOUDFORMATION: 'aws_cf',
-    INSTANCE_LAUNCH: "instance_launch",
-    OPENSTACK_LAUNCH: "openstack_launch",
-    HPPUBLICCLOUD_LAUNCH: "hppubliccloud_launch",
-    AZURE_LAUNCH: "azure_launch",
-    VMWARE_LAUNCH: "vmware_launch",
-    AZURE_ARM_TEMPLATE: "azure_arm"
-};
-
 var Schema = mongoose.Schema;
 
 var BlueprintSchema = new Schema({
@@ -355,13 +313,24 @@ BlueprintSchema.statics.getBlueprintsByProviderId = function(providerId, callbac
     });
 };
 BlueprintSchema.statics.getBlueprintByOrgBgProjectProviderType = function(query, callback) {
-    Blueprints.paginate(query.queryObj, query.options, function(err, blueprints) {
-        if (err) {
-            callback(err, null);
-            return;
-        }
-        callback(null, blueprints);
-    });
+    if(query.queryObj &&  query.options) {
+        Blueprints.paginate(query.queryObj, query.options, function (err, blueprints) {
+            if (err) {
+                callback(err, null);
+                return;
+            }
+            callback(null, blueprints);
+        });
+    }else{
+        this.find(query,function(err, blueprints) {
+            if (err) {
+                logger.error(err);
+                callback(err, null);
+                return;
+            }
+            callback(null, blueprints);
+        });
+    }
 };
 
 
