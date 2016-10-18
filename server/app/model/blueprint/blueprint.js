@@ -25,6 +25,17 @@ var schemaValidator = require('_pr/model/utils/schema-validator');
 var Schema = mongoose.Schema;
 
 var BlueprintSchema = new Schema({
+    name: {
+        type: String,
+        required: true,
+        trim: true,
+        validate: schemaValidator.blueprintNameValidator
+    },
+    blueprintType: {
+        type: String,
+        required: true,
+        trim: true
+    },
     masterDetails: {
         orgId: {
             type: String,
@@ -89,17 +100,6 @@ var BlueprintSchema = new Schema({
             trim: true
         }
     },
-    blueprintName: {
-        type: String,
-        required: true,
-        trim: true,
-        validate: schemaValidator.blueprintNameValidator
-    },
-    blueprintType: {
-        type: String,
-        required: true,
-        trim: true
-    },
     serverDetails: {
         id: {
             type: String,
@@ -138,6 +138,11 @@ var BlueprintSchema = new Schema({
             type: String,
             required: false,
             trim: true
+        },
+        iconPath: {
+            type: String,
+            trim: true,
+            required: false
         }
     },
     blueprintConfig: Schema.Types.Mixed,
@@ -148,11 +153,6 @@ var BlueprintSchema = new Schema({
     },
     parentId: {
         type: String,
-        required: false
-    },
-    iconPath: {
-        type: String,
-        trim: true,
         required: false
     },
     domainNameCheck:{
