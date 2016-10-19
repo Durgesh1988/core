@@ -73,19 +73,6 @@ var vmWareInstanceBlueprintSchema = new Schema({
     instanceUsername: {
         type: String,
         trim: true
-    },
-    infraManagerDetails : {
-        id: {
-            type: String,
-            required: true,
-            trim: true
-        },
-        type: {
-            type: String,
-            required: true,
-            trim: true
-        },
-        infraManagerData: Schema.Types.Mixed
     }
 });
 

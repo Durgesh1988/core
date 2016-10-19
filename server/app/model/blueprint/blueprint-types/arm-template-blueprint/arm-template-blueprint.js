@@ -31,19 +31,6 @@ var ARMTemplateBlueprintSchema = new Schema({
     resourceGroup: {
         type: Object,
         trim: true
-    },
-    infraManagerDetails : {
-        id: {
-            type: String,
-            required: true,
-            trim: true
-        },
-        type: {
-            type: String,
-            required: true,
-            trim: true
-        },
-        infraManagerData: Schema.Types.Mixed
     }
 });
 ARMTemplateBlueprintSchema.statics.createNew = function(azureArmTempData) {

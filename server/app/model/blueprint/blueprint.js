@@ -36,48 +36,26 @@ var BlueprintSchema = new Schema({
         required: true,
         trim: true
     },
-    masterDetails: {
-        orgId: {
-            type: String,
-            required: false,
-            trim: true,
-            validate: schemaValidator.orgIdValidator
-        },
-        orgName: {
-            type: String,
-            required: false,
-            trim: true
-        },
-        bgId: {
-            type: String,
-            required: false,
-            trim: true,
-            validate: schemaValidator.bgIdValidator
-        },
-        bgName: {
-            type: String,
-            required: false,
-            trim: true
-        },
-        projectId: {
-            type: String,
-            required: false,
-            trim: true,
-            validate: schemaValidator.projIdValidator
-        },
-        projectName: {
-            type: String,
-            required: false,
-            trim: true
-        }
+    orgId: {
+        type: String,
+        required: false,
+        trim: true,
+        validate: schemaValidator.orgIdValidator
+    },
+    bgId: {
+        type: String,
+        required: false,
+        trim: true,
+        validate: schemaValidator.bgIdValidator
+    },
+    projectId: {
+        type: String,
+        required: false,
+        trim: true,
+        validate: schemaValidator.projIdValidator
     },
     providerDetails: {
         id: {
-            type: String,
-            required: false,
-            trim: true
-        },
-        name: {
             type: String,
             required: false,
             trim: true
@@ -88,19 +66,12 @@ var BlueprintSchema = new Schema({
             trim: true
         }
     },
-    imageDetails:{
-        id: {
-            type: String,
-            required: false,
-            trim: true
-        },
-        name: {
-            type: String,
-            required: false,
-            trim: true
-        }
+    imageId: {
+        type: String,
+        required: false,
+        trim: true
     },
-    serverDetails: {
+    appDataDetails: {
         id: {
             type: String,
             required: false,
@@ -116,12 +87,12 @@ var BlueprintSchema = new Schema({
             required: false,
             trim: true
         },
-        serverType:{
+        appType:{
             type: String,
             required: false,
             trim: true
         },
-        serverConfiguration:Schema.Types.Mixed
+        appConfig:Schema.Types.Mixed
     },
     templateDetails: {
         id: {
@@ -146,6 +117,19 @@ var BlueprintSchema = new Schema({
         }
     },
     blueprintConfig: Schema.Types.Mixed,
+    infraManagerDetails : {
+        id: {
+            type: String,
+            required: true,
+            trim: true
+        },
+        type: {
+            type: String,
+            required: true,
+            trim: true
+        },
+        infraManagerData: Schema.Types.Mixed
+    },
     version: {
         type: String,
         required: true,

@@ -93,19 +93,6 @@ var AWSInstanceBlueprintSchema = new Schema({
     instanceAmiId: {
         type: String,
         trim: true
-    },
-    infraManagerDetails : {
-        id: {
-            type: String,
-            required: true,
-            trim: true
-        },
-        type: {
-            type: String,
-            required: true,
-            trim: true
-        },
-        infraManagerData: Schema.Types.Mixed
     }
 });
 
