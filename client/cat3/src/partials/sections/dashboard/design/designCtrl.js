@@ -23,7 +23,7 @@
 			}).state('dashboard.design.add', {
 				url: "/:providerName/new",
 				templateUrl: "src/partials/sections/dashboard/design/view/blueprintCreate.html",
-				controller: "blueprintCreateCtrl as bpAdd",
+				controller: "blueprintCreateCtrl as bpCreate",
 				params:{templateObj:{}},
 				resolve: {
 					auth: ["$q", function ($q) {
@@ -78,9 +78,9 @@
 				genericServices.getTreeNew().then(function (orgs) {
 					$rootScope.organObject=orgs;
 					$rootScope.organNewEnt=[];
-			$rootScope.organNewEnt.org = '0';
-			$rootScope.organNewEnt.buss='0';
-			$rootScope.organNewEnt.proj='0';
+					$rootScope.organNewEnt.org = orgs[0];
+					$rootScope.organNewEnt.buss='0';
+					$rootScope.organNewEnt.proj='0';
 					$state.go('dashboard.design.list',{providerName:providers[0].name,templateObj:template[0]});
 
 				});
