@@ -289,13 +289,12 @@ botsNewService.executeBots = function executeBots(botsId,reqBody,userName,execut
         function(paramObj,next) {
             if(schedulerCallCheck === false) {
                 var botObj = {
-                    params: {
-                        data: paramObj,
-                    }
+                    params: paramObj
                 }
                 if(reqBody.nodeIds){
                     botObj.params.nodeIds = reqBody.nodeIds;
                 }
+                console.log(JSON.stringify(botObj));
                 botDao.updateBotsDetail(botId,botObj, next);
             }else{
                 next(null,paramObj);
@@ -341,10 +340,10 @@ botsNewService.executeBots = function executeBots(botsId,reqBody,userName,execut
                                 } else if (botDetails[0].type === 'chef') {
                                     chefExecutor.execute(botDetails[0], auditTrail, userName, executionType, botRemoteServerDetails, next);
                                 } else if (botDetails[0].type === 'blueprints') {
-                                    reqBody = botDetails[0].params.data;
+                                    reqBody = botDetails[0].params;
                                     blueprintExecutor.execute(botDetails[0].id,auditTrail, reqBody, userName, next);
                                 } else if (botDetails[0].type === 'jenkins') {
-                                    reqBody = botDetails[0].params.data;
+                                    reqBody = botDetails[0].params;
                                     jenkinsExecutor.execute(botDetails[0],auditTrail, reqBody, userName, next);
                                 } else {
                                     var err = new Error('Invalid BOT Type');
@@ -842,7 +841,7 @@ function encryptedParam(paramDetails, callback) {
     var cryptoConfig = appConfig.cryptoSettings;
     var cryptography = new Cryptography(cryptoConfig.algorithm, cryptoConfig.password);
     var encryptedObj = {};
-    if (paramDetails.type === 'script' && paramDetails.data && paramDetails.data !== null) {
+    if (paramDetails.category === 'script' && paramDetails.data && paramDetails.data !== null) {
             Object.keys(paramDetails.data).forEach(function (key) {
                 var encryptedText = cryptography.encryptText(paramDetails.data[key], cryptoConfig.encryptionEncoding,
                     cryptoConfig.decryptionEncoding);
