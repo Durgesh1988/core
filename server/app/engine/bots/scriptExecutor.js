@@ -47,7 +47,8 @@ scriptExecutor.execute = function execute(botsDetails,auditTrail,userName,execut
                         return;
                     } else if (instances.length > 0) {
                         logsDao.insertLog({
-                            referenceId: [actionLogId,botsDetails._id],
+                            actionId:actionLogId,
+                            referenceId: botsDetails._id,
                             err: false,
                             log: 'BOT execution has started for Script BOTs  ' + botsDetails.id +" on Remote",
                             timestamp: new Date().getTime()
@@ -69,7 +70,8 @@ scriptExecutor.execute = function execute(botsDetails,auditTrail,userName,execut
                                         "actionLogId": actionLogId
                                     };
                                     logsDao.insertLog({
-                                        referenceId: [actionLogId,botsDetails._id],
+                                        actionId:actionLogId,
+                                        referenceId: botsDetails._id,
                                         err: true,
                                         log: 'BOT execution has failed for Script BOTs  ' + botsDetails.id +" on Remote",
                                         timestamp: new Date().getTime()
@@ -82,7 +84,8 @@ scriptExecutor.execute = function execute(botsDetails,auditTrail,userName,execut
                                     });
                                 }else {
                                     logsDao.insertLog({
-                                        referenceId: [actionLogId,botsDetails._id],
+                                        actionId:actionLogId,
+                                        referenceId: botsDetails._id,
                                         err: false,
                                         log: 'BOT has been executed successfully for Script BOTs  ' + botsDetails.id +" on Remote",
                                         timestamp: new Date().getTime()
@@ -135,10 +138,10 @@ function executeScriptOnLocal(botsScriptDetails,auditTrail,userName,botHostDetai
     var cryptoConfig = appConfig.cryptoSettings;
     var cryptography = new Cryptography(cryptoConfig.algorithm, cryptoConfig.password);
     var actionId = uuid.v4();
-    var logsReferenceIds = [botsScriptDetails._id, actionId];
     var replaceTextObj = {};
     logsDao.insertLog({
-        referenceId: logsReferenceIds,
+        actionId:actionId,
+        referenceId: botsScriptDetails._id,
         err: false,
         log: 'BOT execution has started for Script BOTs  ' + botsScriptDetails.id + " on Local",
         timestamp: new Date().getTime()
@@ -181,7 +184,8 @@ function executeScriptOnLocal(botsScriptDetails,auditTrail,userName,botHostDetai
                             logger.error("In Error for Fetching Executor Audit Trails ", err);
                             var timestampEnded = new Date().getTime();
                             logsDao.insertLog({
-                                referenceId: logsReferenceIds,
+                                actionId:actionId,
+                                referenceId: botsScriptDetails._id,
                                 err: true,
                                 log: "Error in Fetching Audit Trails",
                                 timestamp: timestampEnded
@@ -212,13 +216,15 @@ function executeScriptOnLocal(botsScriptDetails,auditTrail,userName,botHostDetai
                             runningStatus="success";
                             var timestampEnded = new Date().getTime();
                             logsDao.insertLog({
-                                referenceId: logsReferenceIds,
+                                actionId:actionId,
+                                referenceId: botsScriptDetails._id,
                                 err: false,
                                 log: result.status.text,
                                 timestamp: timestampEnded
                             });
                             logsDao.insertLog({
-                                referenceId: logsReferenceIds,
+                                actionId:actionId,
+                                referenceId: botsScriptDetails._id,
                                 err: false,
                                 log: 'BOT has been executed successfully for Script BOTs  ' + botsScriptDetails.id +" on Local",
                                 timestamp: timestampEnded
@@ -264,7 +270,8 @@ function executeScriptOnLocal(botsScriptDetails,auditTrail,userName,botHostDetai
                         timer.stop();
                         var timestampEnded = new Date().getTime();
                         logsDao.insertLog({
-                            referenceId: logsReferenceIds,
+                            actionId:actionId,
+                            referenceId: botsScriptDetails._id,
                             err: true,
                             log: "Error in fetching Audit Trails(Timer is Completed)",
                             timestamp: timestampEnded
@@ -299,7 +306,8 @@ function executeScriptOnLocal(botsScriptDetails,auditTrail,userName,botHostDetai
                 logger.error(err);
                 var timestampEnded = new Date().getTime();
                 logsDao.insertLog({
-                    referenceId: logsReferenceIds,
+                    actionId:actionId,
+                    referenceId: botsScriptDetails._id,
                     err: true,
                     log: "Error in Script executor",
                     timestamp: timestampEnded
@@ -333,7 +341,6 @@ function executeScriptOnRemote(instance,botDetails,actionLogId,userName,botHostD
     var timestampStarted = new Date().getTime();
     var actionLog = instanceModel.insertOrchestrationActionLog(instance._id, null, userName, timestampStarted);
     instance.tempActionLogId = actionLog._id;
-    var logsReferenceIds = [instance._id, actionLog._id, actionLogId];
     var instanceLog = {
         actionId: actionLog._id,
         instanceId: instance._id,
@@ -359,7 +366,9 @@ function executeScriptOnRemote(instance,botDetails,actionLogId,userName,botHostD
     if (!instance.instanceIP) {
         var timestampEnded = new Date().getTime();
         logsDao.insertLog({
-            referenceId: logsReferenceIds,
+            actionId:actionLog._id,
+            referenceId: actionLogId,
+            sourceId: instance._id,
             err: true,
             log: "Instance IP is not defined. Chef Client run failed",
             timestamp: timestampEnded
@@ -439,7 +448,9 @@ function executeScriptOnRemote(instance,botDetails,actionLogId,userName,botHostD
                     logger.error(err);
                     var timestampEnded = new Date().getTime();
                     logsDao.insertLog({
-                        referenceId: logsReferenceIds,
+                        actionId:actionLog._id,
+                        referenceId: actionLogId,
+                        sourceId: instance._id,
                         err: true,
                         log: "Error in Script executor: ",
                         timestamp: timestampEnded
@@ -483,7 +494,9 @@ function executeScriptOnRemote(instance,botDetails,actionLogId,userName,botHostD
                                 logger.error("In Error for Fetching Executor Audit Trails ", err);
                                 var timestampEnded = new Date().getTime();
                                 logsDao.insertLog({
-                                    referenceId: logsReferenceIds,
+                                    actionId:actionLog._id,
+                                    referenceId: actionLogId,
+                                    sourceId: instance._id,
                                     err: true,
                                     log: "Error in Fetching Audit Trails",
                                     timestamp: timestampEnded
@@ -520,13 +533,17 @@ function executeScriptOnRemote(instance,botDetails,actionLogId,userName,botHostD
                                 runningStatus="success";
                                 var timestampEnded = new Date().getTime();
                                 logsDao.insertLog({
-                                    referenceId: logsReferenceIds,
+                                    actionId:actionLog._id,
+                                    referenceId: actionLogId,
+                                    sourceId: instance._id,
                                     err: false,
                                     log: result.status.text,
                                     timestamp: timestampEnded
                                 });
                                 logsDao.insertLog({
-                                    referenceId: logsReferenceIds,
+                                    actionId:actionLog._id,
+                                    referenceId: actionLogId,
+                                    sourceId: instance._id,
                                     err: false,
                                     log:  botDetails.id+' BOTs execution success on Node '+instance.instanceIP,
                                     timestamp: timestampEnded
@@ -567,7 +584,9 @@ function executeScriptOnRemote(instance,botDetails,actionLogId,userName,botHostD
                         if(runningStatus === 'pending') {
                             var timestampEnded = new Date().getTime();
                             logsDao.insertLog({
-                                referenceId: logsReferenceIds,
+                                actionId:actionLog._id,
+                                referenceId: actionLogId,
+                                sourceId: instance._id,
                                 err: true,
                                 log: "Error in fetching Audit Trails(Timer is Completed)",
                                 timestamp: timestampEnded

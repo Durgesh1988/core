@@ -21,15 +21,39 @@ var logger = require('_pr/logger')(module);
 
 var Schema = mongoose.Schema;
 var LogSchema = new Schema({
-    referenceId: [String],
-    err: Boolean,
-    log: String,
-    timestamp: Number
+    actionId:{
+        type: String,
+        trim: true,
+        required: true
+    },
+    sourceId:{
+        type: String,
+        trim: true,
+        required: false
+    },
+    referenceId: {
+        type: String,
+        trim: true,
+        required: false
+    },
+    err: {
+        type: Boolean,
+        default: false,
+        required: true
+    },
+    log: {
+        type: String,
+        trim: true,
+        required: false
+    },
+    timestamp: {
+        type: Number,
+        default: Date.now(),
+        required: false
+    }
 });
 var Logs = mongoose.model('logs', LogSchema);
-
 var LogsDao = function() {
-
     this.insertLog = function(logData, callback) {
         var log = new Logs(logData);
         log.save(function(err, data) {
@@ -44,9 +68,7 @@ var LogsDao = function() {
                 callback(null, data);
             }
         });
-
     };
-
     this.getLogsByReferenceId = function(referenceId, timestamp, callback) {
         logger.debug("Enter getLogsByReferenceId ", referenceId, timestamp);
         var queryObj = {
@@ -54,14 +76,12 @@ var LogsDao = function() {
                 $in: [referenceId]
             }
         }
-
         if (timestamp) {
 
             queryObj.timestamp = {
                 "$gt": timestamp
             };
         }
-
         Logs.find(queryObj, function(err, data) {
             if (err) {
                 logger.debug("Failed to getLogsByReferenceId ", referenceId, timestamp, err);
@@ -71,7 +91,6 @@ var LogsDao = function() {
             logger.debug("Exit getLogsByReferenceId ", referenceId, timestamp);
             callback(null, data);
         });
-
     }
 
     this.getLogsByReferenceIdAndTimestamp = function(referenceId, timestampStarted, timestampEnded, callback) {
@@ -95,28 +114,35 @@ var LogsDao = function() {
             }
             callback(null, data);
         });
-
     }
-
-    this.getLogsByActionId = function(referenceId, callback) {
-        logger.debug("Enter getLogsByReferenceId ", referenceId);
+    this.getLogsByActionId = function(actionId, callback) {
+        logger.debug("Enter getLogsByActionId ", actionId);
         var queryObj = {
-            referenceId: {
-                $in: [referenceId]
-            }
+            actionId: actionId
         }
-
         Logs.find(queryObj, function(err, data) {
             if (err) {
                 callback(err, null);
                 return;
             }
-
             callback(null, data);
+            return;
         });
+    }
 
+    this.getLogsBySourceId = function(sourceId, callback) {
+        logger.debug("Enter getLogsBySourceId ", sourceId);
+        var queryObj = {
+            sourceId:sourceId
+        }
+        Logs.find(queryObj, function(err, data) {
+            if (err) {
+                callback(err, null);
+                return;
+            }
+            callback(null, data);
+            return;
+        });
     }
 }
-
-
 module.exports = new LogsDao();
