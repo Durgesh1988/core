@@ -3,14 +3,17 @@
    <div class="page-name">
       BOTs Library&nbsp;
       <span class="pull-right">
-      <button type="button" title="Refresh" class="btn btn-xs cat-btn-update pull-right refresh-btn" ng-click="RefreshBotsLibrary();">
-      <i class="fa fa-refresh white"></i>
-      </button>
-      <button type="button" class="btn btn-xs cat-btn-update pull-right filter-margin" ng-click="isOpenSidebar = !isOpenSidebar">
-      <i class="fa fa-filter fa-2 white" aria-hidden="true"></i>&nbsp;Filter
-      </button>
-      <button type="button" class="btn btn-xs cat-btn-update marginright6" 
-       ui-sref="dashboard.bots.botsCreate">
+        <button type="button" title="Refresh" class="btn btn-xs cat-btn-update pull-right refresh-btn" ng-click="RefreshBotsLibrary();">
+        <i class="fa fa-refresh white"></i>
+        </button>
+        <button type="button" title="Filter" class="btn btn-xs cat-btn-update pull-right filter-margin" ng-click="isOpenSidebar = !isOpenSidebar">
+        <i class="fa fa-filter fa-2 white" aria-hidden="true"></i>&nbsp;
+        </button>
+        <!-- <button type="button" title="Git Sync" class="btn btn-xs cat-btn-update marginright6" ui-sref="dashboard.bots.botsSync">
+          <i class="fa fa-refresh white"></i>
+          Sync
+        </button> -->
+        <button type="button" title="Create New" class="btn btn-xs cat-btn-update marginright6" ui-sref="dashboard.bots.botsCreate">
           <i class="fa fa-plus white"></i>
           New
         </button>
@@ -122,6 +125,7 @@
     <div class="botsWidth">
       <div class="marginleft35 margintop8 botsWidth  box-infobox" style="border-top-color:floralwhite"></div>
       <div class="gallery-header top-stats marginCheck">
+        <span ng-show="noShowForServiceNow">
           <button type="button" class="font-size-16 tabReadme btn btn-link {{botsCardViewSelection}}" title="Grid View" ng-click="setCardView('pageReset')"  >
               <i class="fa fa-th black"></i>
               Grid
@@ -139,6 +143,7 @@
          <span ng-if="botLibType" class="marginleft10 box-title font-size-15"><span>Type</span>
          <span class="badge">{{botLibType}}<span title="Clear" class="filterClear" ng-click="clearFilter(botLibType)">×</span></span>
          </span>
+      </span>
          <form class="pull-right firefoxForm marginright14" novalidate name="library-form" ng-submit="searchBotNameCategory('pageNumber')">
             <span class="bot-library-search">
                <label>&nbsp;
@@ -150,7 +155,7 @@
          </form>
       </div>
       <loading size="large" name="isBotLibraryPageLoading" type="block" align="center"></loading>
-      <div class="col-lg-4 col-md-4 col-sm-6" ng-show="isCardViewActive" ng-repeat="botsDetails in botLibGridOptions.data">
+      <div class="col-lg-4 col-md-4 col-sm-6" ng-show="isCardViewActive && noShowForServiceNow" ng-repeat="botsDetails in botLibGridOptions.data">
          <div class="agent-card grid-card hoverable col-lg-12 col-md-12 col-xs-12">
             <a class="appnav" title="Go to Details" ui-sref="dashboard.bots.botsDescription({botDetail:botsDetails,listType:0})">
                <div class="image-cell two-tone-11">
@@ -171,8 +176,8 @@
                       {{botsDetails.lastRunTime}} &nbsp;&nbsp;
                 </ul>
                 <div class="pull-right" style="margin-top:8px;">
-                  <!-- <a ng-if="botsDetails.source ==='GitHub'" class="margin10 cursor" title="BOT Sync"><i ng-class="{'fa fa-refresh' : activeClass !== botsDetails, 'fa fa-refresh fa-spin' : activeClass === botsDetails}" ng-click="botSync(botsDetails)"></i></a> -->
-                  <a class="margin10 cursor" ui-sref="dashboard.bots.botsDescription({botDetail:botsDetails,listType:0})" title="Execute"><i class="fa fa-play font-size-16"></i></a>
+                  <a ng-if="botsDetails.type ==='blueprints'" class="margin10 cursor" title="Execute"><i class="fa fa-play font-size-16" ng-click="blueprintExecute(botsDetails)"></i></a>
+                  <a ng-if="botsDetails.type !=='blueprints'" class="margin10 cursor" ui-sref="dashboard.bots.botsDescription({botDetail:botsDetails,listType:0})" title="Execute"><i class="fa fa-play font-size-16"></i></a>
                </div>
             </a>
          </div>
@@ -191,14 +196,24 @@
             </div>
         </div>
     </div>   
-   <!--cards section ends here-->
+   <!--card section ends here-->
 
-   <!--table section start here-->
+   <!--table section starts here-->
    <div class="col-lg-12 paddingForScreen" >
-   <div class="alert alert-info text-center" ng-if="!botLibGridOptions.data.length > 0 && !isBotLibraryPageLoading">
-      No data Available
+     <div class="alert alert-info text-center" ng-if="!botLibGridOptions.data.length > 0 && !isBotLibraryPageLoading">
+        No data Available
+     </div>
+     <div id="grid1" ng-show="!isCardViewActive" ng-if="botLibGridOptions.data.length >0 && !isBotLibraryPageLoading" ui-grid="botLibGridOptions" ui-grid-pagination ui-grid-auto-resize class="grid gridHeightBots"></div>
    </div>
-   <div id="grid1" ng-show="!isCardViewActive" ng-if="botLibGridOptions.data.length >0 && !isBotLibraryPageLoading" ui-grid="botLibGridOptions" ui-grid-pagination ui-grid-auto-resize class="grid heightBigCheck"></div>
- </div>
    <!--table section ends here -->
+
+   <!--table section for serviceNow starts here-->
+    <loading size="large" name="isBotServiceNowPageLoading" type="block" align="center"></loading>
+   <div class="col-lg-12 paddingForScreen" ng-show="!noShowForServiceNow">
+     <div class="alert alert-info text-center" ng-if="!botServiceNowLibGridOptions.data.length > 0 && !isBotServiceNowPageLoading">
+        No data Available
+     </div>
+     <div id="grid2" ng-if="botServiceNowLibGridOptions.data.length >0 && !isBotServiceNowPageLoading" ui-grid="botServiceNowLibGridOptions" ui-grid-pagination ui-grid-auto-resize class="grid gridHeightBots"></div>
+   </div>
+   <!--table section for serviceNow ends here -->
 </div>

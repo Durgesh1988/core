@@ -27,7 +27,7 @@ var blueprintExecutor = module.exports = {};
 blueprintExecutor.execute = function execute(botId,auditTrail,reqBody,userName,callback) {
     async.waterfall([
         function (next) {
-            usersDao.haspermission(userName, reqBody.category, reqBody.permissionTo, null, reqBody.permissionSet,next);
+            usersDao.haspermission(userName, reqBody.type, reqBody.permissionTo, null, reqBody.permissionSet,next);
         },
         function (launchPermission, next) {
             if(launchPermission === true){
@@ -56,8 +56,8 @@ blueprintExecutor.execute = function execute(botId,auditTrail,reqBody,userName,c
                     })(reqBody.blueprintIds[i]);
                 }
             }else{
-                logger.debug('No permission to ' + reqBody.permissionTo + ' on ' + reqBody.category);
-                next({errCode:401,errMsg:'No permission to ' + reqBody.permissionTo + ' on ' + reqBody.category},null);
+                logger.debug('No permission to ' + reqBody.permissionTo + ' on ' + reqBody.type);
+                next({errCode:401,errMsg:'No permission to ' + reqBody.permissionTo + ' on ' + reqBody.type},null);
             }
         }
     ],function (err, results) {
@@ -76,6 +76,7 @@ blueprintExecutor.execute = function execute(botId,auditTrail,reqBody,userName,c
 
 
 function executeBlueprint(botId,blueprintId,auditTrail,reqBody,userName,callback){
+    var stackName = null,domainName = null;
     async.waterfall([
         function (next) {
             Blueprints.getById(blueprintId,next);
@@ -83,12 +84,12 @@ function executeBlueprint(botId,blueprintId,auditTrail,reqBody,userName,callback
         function(blueprint,next){
             if(blueprint !== null) {
                 if (blueprint.blueprintType === 'aws_cf' || blueprint.blueprintType === 'azure_arm') {
-                    var stackName = reqBody.stackName;
+                    stackName = reqBody.stackName;
                     if (stackName === '' || stackName === null) {
                         next({code: 400, message: "Invalid Stack name"}, null);
                         return;
                     } else {
-                        resourceMapService.getResourceMapByStackName(stackName, function (err, data) {
+                        resourceMapService.getResourceMapByName(stackName, function (err, data) {
                             if (err) {
                                 next(err, null);
                                 return;
@@ -100,12 +101,12 @@ function executeBlueprint(botId,blueprintId,auditTrail,reqBody,userName,callback
                     }
                 }
                 else if (blueprint.domainNameCheck === true) {
-                    var domainName = reqBody.domainName;
+                    domainName = reqBody.domainName;
                     if (domainName === '' || domainName === null) {
                         next({code: 400, message: "Invalid Domain name"}, null);
                         return;
                     } else {
-                        resourceMapService.getResourceMapByStackName(domainName, function (err, data) {
+                        resourceMapService.getResourceMapByName(domainName, function (err, data) {
                             if (err) {
                                 next(err, null);
                                 return;

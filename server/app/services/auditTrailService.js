@@ -30,6 +30,7 @@ var async = require('async');
 var apiUtil = require('_pr/lib/utils/apiUtil.js');
 var logsDao = require('_pr/model/dao/logsdao.js');
 var serviceNow = require('_pr/model/servicenow/servicenow.js');
+var settingService = require('_pr/services/settingsService');
 
 
 auditTrailService.insertAuditTrail = function insertAuditTrail(auditDetails,auditTrailConfig,actionObj,callback) {
@@ -225,79 +226,84 @@ auditTrailService.syncCatalystWithServiceNow = function syncCatalystWithServiceN
             if(botAuditTrail.length > 0 && botAuditTrail[0].auditTrailConfig.serviceNowTicketRefObj
             && (botAuditTrail[0].auditTrailConfig.serviceNowTicketRefObj !== null || botAuditTrail[0].auditTrailConfig.serviceNowTicketRefObj !== '')){
                 srnTicketNo = botAuditTrail[0].auditTrailConfig.serviceNowTicketRefObj.ticketNo;
-                serviceNow.getCMDBList(next);
-            }else{
-                next({code:400,message:"There is no records are available for Service Now Ticket Sync"},null);
-            }
-        },
-        function(srnServerDetails,next){
-            if(srnServerDetails.length > 0) {
-                var tableName = 'incident';
-                var config = {
-                    username: srnServerDetails[0].servicenowusername,
-                    password: srnServerDetails[0].servicenowpassword,
-                    host: srnServerDetails[0].url,
-                    ticketNo: srnTicketNo
-                };
-                serviceNow.getConfigItems(tableName,config,function (err, ticketData) {
+                serviceNow.getCMDBList(function(err,srnServerDetails) {
                     if (err) {
-                        logger.error("Error in Getting Servicenow Config Items:", err);
                         next(err, null);
-                        return;
-                    } else if (!ticketData.result) {
-                        logger.error("ServiceNow CI data fetch error");
-                        next({code: 303, message: "No Data is available in ServiceNow against ticketNo:"+srnTicketNo}, null);
-                        return;
-                    } else {
-                        var serviceNowObj = {
-                            ticketNo:srnTicketNo,
-                            ticketLink:srnServerDetails[0].url+'/api/now/table/' + tableName+"?number="+srnTicketNo,
-                            shortDesc:ticketData.result[0].short_description,
-                            desc:ticketData.result[0].description,
-                            openedAt:toTimestamp(ticketData.result[0].opened_at),
-                            createdOn:toTimestamp(ticketData.result[0].sys_created_on),
-                            closedAt:toTimestamp(ticketData.result[0].closed_at),
-                            updatedOn:toTimestamp(ticketData.result[0].sys_updated_on),
-                            resolvedAt:toTimestamp(ticketData.result[0].resolved_at),
-                            state:checkServiceNowTicketState(ticketData.result[0].state),
-                            priority:checkServiceNowTicketPriority(ticketData.result[0].priority),
-                            category:ticketData.result[0].category
+                    } else if (srnServerDetails.length > 0) {
+                        var tableName = 'incident';
+                        var config = {
+                            username: srnServerDetails[0].servicenowusername,
+                            password: srnServerDetails[0].servicenowpassword,
+                            host: srnServerDetails[0].url,
+                            ticketNo: srnTicketNo
                         };
-                        var request = require('request');
-                        var host = ticketData.result[0].resolved_by.link.replace(/.*?:\/\//g, "");
-                        var serviceNowURL = 'https://' + config.username + ':' + config.password + '@' + host;
-                        var options = {
-                            url: serviceNowURL,
-                            headers: {
-                                'User-Agent': 'request',
-                                'Accept': 'application/json'
+                        serviceNow.getConfigItems(tableName, config, function (err, ticketData) {
+                            if (err) {
+                                logger.error("Error in Getting Servicenow Config Items:", err);
+                                next(err, null);
+                                return;
+                            } else if (!ticketData.result) {
+                                logger.error("ServiceNow CI data fetch error");
+                                next({
+                                    code: 303,
+                                    message: "No Data is available in ServiceNow against ticketNo:" + srnTicketNo
+                                }, null);
+                                return;
+                            } else {
+                                var serviceNowObj = {
+                                    ticketNo: srnTicketNo,
+                                    ticketLink: srnServerDetails[0].url + '/api/now/table/' + tableName + "?number=" + srnTicketNo,
+                                    shortDesc: ticketData.result[0].short_description,
+                                    desc: ticketData.result[0].description,
+                                    openedAt: toTimestamp(ticketData.result[0].opened_at),
+                                    createdOn: toTimestamp(ticketData.result[0].sys_created_on),
+                                    closedAt: toTimestamp(ticketData.result[0].closed_at),
+                                    updatedOn: toTimestamp(ticketData.result[0].sys_updated_on),
+                                    resolvedAt: toTimestamp(ticketData.result[0].resolved_at),
+                                    state: checkServiceNowTicketState(ticketData.result[0].state),
+                                    priority: checkServiceNowTicketPriority(ticketData.result[0].priority),
+                                    category: ticketData.result[0].category
+                                };
+                                var request = require('request');
+                                var host = ticketData.result[0].resolved_by.link.replace(/.*?:\/\//g, "");
+                                var serviceNowURL = 'https://' + config.username + ':' + config.password + '@' + host;
+                                var options = {
+                                    url: serviceNowURL,
+                                    headers: {
+                                        'User-Agent': 'request',
+                                        'Accept': 'application/json'
+                                    }
+                                };
+                                request(options, function (error, response, body) {
+                                    if (!error && response.statusCode == 200) {
+                                        var info = JSON.parse(body);
+                                        serviceNowObj.resolvedBy = info.result.user_name;
+                                    } else {
+                                        serviceNowObj.resolvedBy = "admin";
+                                    }
+                                    botAuditTrail.updateBotAuditTrail(auditTrailId, {
+                                        'auditTrailConfig.serviceNowTicketRefObj': serviceNowObj
+                                    }, function (err, data) {
+                                        if (err) {
+                                            logger.error(err);
+                                            next(err, null);
+                                            return;
+                                        } else {
+                                            next(null, data);
+                                            return;
+                                        }
+                                    })
+                                });
                             }
-                        };
-                        request(options, function(error, response, body) {
-                            if (!error && response.statusCode == 200) {
-                                var info = JSON.parse(body);
-                                serviceNowObj.resolvedBy = info.result.user_name;
-                            }else {
-                                serviceNowObj.resolvedBy = "admin";
-                            }
-                            botAuditTrail.updateBotAuditTrail(auditTrailId, {
-                                'auditTrailConfig.serviceNowTicketRefObj': serviceNowObj
-                            }, function (err, data) {
-                                if (err) {
-                                    logger.error(err);
-                                    next(err, null);
-                                    return;
-                                }else {
-                                    next(null, data);
-                                    return;
-                                }
-                            })
                         });
+                    } else {
+                        logger.info("There is no Service Now Server details available. Please configure first for serviceNow Syncing");
+                        next(null,null);
                     }
                 });
             }else{
-                next({code:500,message:"There is no Service Now Server details available. Please configure first for serviceNow Syncing"})
-                return;
+                logger.info("There is no records are available for Service Now Ticket Sync");
+                next(null,null);
             }
         }
 
@@ -313,10 +319,15 @@ auditTrailService.syncCatalystWithServiceNow = function syncCatalystWithServiceN
 }
 
 auditTrailService.getAuditTrailActionLogs = function getAuditTrailActionLogs(actionId,timeStamp,callback){
-    if (timeStamp) {
-        timeStamp = parseInt(timeStamp);
+    var queryObj = {
+        instanceRefId:actionId
     }
-    logsDao.getLogsByReferenceId(actionId, timeStamp, function(err,actionLogs){
+    if (timeStamp) {
+        queryObj.timestamp = {
+            "$gt": parseInt(timeStamp)
+        };
+    }
+    logsDao.getLogsDetails(queryObj, function(err,actionLogs){
         if (err){
             logger.error(err);
             callback(err,null);
@@ -327,7 +338,7 @@ auditTrailService.getAuditTrailActionLogs = function getAuditTrailActionLogs(act
     });
 }
 
-auditTrailService.getBOTsSummary = function getBOTsSummary(queryParam,BOTSchema,callback){
+auditTrailService.getBOTsSummary = function getBOTsSummary(queryParam,BOTSchema,userName,callback){
     async.waterfall([
         function(next){
             apiUtil.queryFilterBy(queryParam,next);
@@ -335,91 +346,82 @@ auditTrailService.getBOTsSummary = function getBOTsSummary(queryParam,BOTSchema,
         function(filterQuery,next) {
             filterQuery.isDeleted=false;
             if(BOTSchema === 'BOTOLD') {
-                botOld.getAllBots(filterQuery, next);
+                settingService.getOrgUserFilter(userName,function(err,orgIds){
+                    if(err){
+                        next(err,null);
+                    }else if(orgIds.length > 0){
+                        filterQuery.orgId = {$in:orgIds};
+                        botOld.getAllBots(filterQuery, next);
+                    }else{
+                        botOld.getAllBots(filterQuery, next);
+                    }
+                });
             }else{
-                botDao.getAllBots(filterQuery, next);
+                settingService.getOrgUserFilter(userName,function(err,orgIds){
+                    if(err){
+                        next(err,null);
+                    }else if(orgIds.length > 0){
+                        filterQuery.orgId = {$in:orgIds};
+                        botDao.getAllBots(filterQuery, next);
+                    }else{
+                        botDao.getAllBots(filterQuery, next);
+                    }
+                });
             }
         },
         function(botsList,next){
-            var auditIds = [];
-            for(var i = 0; i < botsList.length; i++) {
-                if(BOTSchema === 'BOTOLD') {
-                    auditIds.push(botsList[i].botId);
-                }else{
-                    auditIds.push(botsList[i]._id);
-                }
-            }
             async.parallel({
                 totalNoOfBots: function(callback){
                             callback(null, botsList.length);
                 },
                 totalNoOfSuccessBots: function(callback){
-                    var query = {
-                        auditType: BOTSchema,
-                        actionStatus: 'success',
-                        isDeleted: false,
-                        auditId:{$in:auditIds}
-                    };
-                    var botsIds = [];
-                    auditTrail.getAuditTrails(query, function (err, botsAudits) {
-                        if (err) {
-                            callback(err, null);
-                            return;
-                        } else{
-                            callback(null, botsAudits.length);
-                            return;
+                    var successCount = 0;
+                    for(var i = 0; i < botsList.length; i++){
+                        if(botsList[i].successExecutionCount){
+                            successCount = botsList[i].successExecutionCount;
                         }
-                    });
+                    }
+                    callback(null,successCount);
                 },
                 totalNoOfServiceNowTickets: function(callback){
-                    var query={
-                        auditType:BOTSchema,
-                        actionStatus:'success',
-                        isDeleted:false,
-                        'auditTrailConfig.serviceNowTicketRefObj':{$ne:null}
-                    };
-                    auditTrail.getAuditTrails(query, function(err,botsAudits){
-                        if(err){
-                            callback(err,null);
-                        }else {
-                            callback(null,botsAudits.length);
+                    var srnCount = 0;
+                    for(var i = 0; i < botsList.length; i++){
+                        if(botsList[i].srnSuccessExecutionCount){
+                            srnCount = botsList[i].srnSuccessExecutionCount;
                         }
-                    });
+                    }
+                    callback(null,srnCount);
                 },
                 totalNoOfRunningBots: function(callback){
-                    var query={
-                        auditType:BOTSchema,
-                        actionStatus:'running',
-                        isDeleted:false,
-                        auditId:{$in:auditIds}
-                    };
-                    var botsIds = [];
-                    auditTrail.getAuditTrails(query, function(err,botsAudits){
-                        if(err){
-                            callback(err,null);
-                        }else if (botsAudits.length > 0) {
-                            for (var j = 0; j < botsAudits.length; j++) {
-                                if (botsIds.indexOf(botsAudits[j].auditId) === -1) {
-                                    botsIds.push(botsAudits[j].auditId);
-                                }
-                            }
-                            callback(null,botsIds.length);
-                        } else {
-                            callback(null,botsIds.length);
+                    var runningCount = 0;
+                    for(var i = 0; i < botsList.length; i++){
+                        if(botsList[i].lastExecutionStatus && botsList[i].lastExecutionStatus === 'failed'){
+                            runningCount = runningCount + 1;
                         }
-                    });
+                    }
+                    callback(null,runningCount);
                 },
                 totalSavedTimeForBots: function(callback){
-                    var days =0,hours = 0, minutes = 0;
+                    var days =0,hours = 0, minutes = 0, seconds = 0;
                     if(botsList.length > 0) {
                         for (var k = 0; k < botsList.length; k++) {
+                            if(botsList[k].savedTime && botsList[k].savedTime.days) {
+                                days = days + botsList[k].savedTime.days;
+                            }
                             if(botsList[k].savedTime && botsList[k].savedTime.hours) {
                                 hours = hours + botsList[k].savedTime.hours;
                             }
                             if(botsList[k].savedTime && botsList[k].savedTime.minutes){
                                 minutes = minutes + botsList[k].savedTime.minutes;
                             }
+                            if(botsList[k].savedTime && botsList[k].savedTime.seconds){
+                                seconds = seconds + botsList[k].savedTime.seconds;
+                            }
                         }
+                    }
+                    if(seconds >= 60){
+                        minutes = minutes + Math.floor(seconds / 60);
+                        seconds = seconds % 60;
                     }
                     if(minutes >= 60){
                         hours = hours + Math.floor(minutes / 60);
@@ -432,32 +434,19 @@ auditTrailService.getBOTsSummary = function getBOTsSummary(queryParam,BOTSchema,
                     var result = {
                         days:days,
                         hours:hours,
-                        minutes:minutes
+                        minutes:minutes,
+                        seconds:seconds
                     }
                     callback(null,result);
                 },
                 totalNoOfFailedBots: function(callback){
-                    var query={
-                        auditType:BOTSchema,
-                        actionStatus:'failed',
-                        isDeleted:false,
-                        auditId:{$in:auditIds}
-                    };
-                    var botsIds = [];
-                    auditTrail.getAuditTrails(query, function(err,botsAudits){
-                        if(err){
-                            callback(err,null);
-                        }else if (botsAudits.length > 0) {
-                            for (var j = 0; j < botsAudits.length; j++) {
-                                if (botsIds.indexOf(botsAudits[j].auditId) === -1) {
-                                    botsIds.push(botsAudits[j].auditId);
-                                }
-                            }
-                            callback(null,botsIds.length);
-                        } else {
-                            callback(null,botsIds.length);
+                    var failedCount = 0;
+                    for(var i = 0; i < botsList.length; i++){
+                        if(botsList[i].failedExecutionCount){
+                            failedCount = botsList[i].failedExecutionCount;
                         }
-                    });
+                    }
+                    callback(null,failedCount);
                 }
 
             },function(err,data){

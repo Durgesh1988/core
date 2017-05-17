@@ -19,13 +19,13 @@
 // This file act as a Util class which contains Settings related all business logics.
 
 var logger = require('_pr/logger')(module);
-var d4dModelNew = require('../../model/d4dmasters/d4dmastersmodelnew.js');
+var d4dModelNew = require('_pr/model/d4dmasters/d4dmastersmodelnew.js');
 var ObjectId = require('mongoose').Types.ObjectId;
-var permissionsetDao = require('../../model/dao/permissionsetsdao');
-var d4dModel = require('../../model/d4dmasters/d4dmastersmodel.js');
-var configmgmtDao = require('../../model/d4dmasters/configmgmt.js');
+var permissionsetDao = require('_pr/model/dao/permissionsetsdao');
+var d4dModel = require('_pr/model/d4dmasters/d4dmastersmodel.js');
+var configmgmtDao = require('_pr/model/d4dmasters/configmgmt.js');
 var appConfig = require('_pr/config');
-var Cryptography = require('../utils/cryptography');
+var Cryptography = require('_pr/lib/utils/cryptography');
 var chefSettings = appConfig.chef;
 var AppDeploy = require('_pr/model/app-deploy/app-deploy');
 var async = require('async');
@@ -451,10 +451,11 @@ var MasterUtil = function () {
     }
 
 
-    this.getFilterTemplateTypes = function (id, callback) {
+    this.getFilterTemplateTypes = function (id,orgIds, callback) {
         var templateTypeList = [];
         d4dModelNew.d4dModelMastersDesignTemplateTypes.find({
-            id: id
+            id: id,
+            orgname_rowid:{$in:orgIds}
         }, function (err, templateTypes) {
             if (err) {
                 callback(err, null);
@@ -1186,7 +1187,7 @@ var MasterUtil = function () {
                 }
                 callback(null, orgList);
             } else {
-                callback(err, null);
+                callback(err, []);
             }
         });
     }
@@ -2210,14 +2211,29 @@ var MasterUtil = function () {
     this.getProjectName = function (projectId, callback) {
         logger.debug("Project rowids: ", projectId);
         d4dModelNew.d4dModelMastersProjects.find({
-            rowid: projectId
+            rowid: projectId,
+            id:'4'
         }, function (err, projects) {
             if (err) {
                 callback(err, null);
-            }
-            if (projects.length) {
-                logger.debug("Got Environment: ", JSON.stringify(projects));
+            }else if (projects.length) {
                 callback(null, projects[0].projectname);
+                return;
+            } else {
+                callback(null, null);
+                return;
+            }
+        });
+    }
+    this.getBusinessGroupName = function (bgId, callback) {
+        d4dModelNew.d4dModelMastersProductGroup.find({
+            rowid: bgId,
+            id:'2'
+        }, function (err, bgs) {
+            if (err) {
+                callback(err, null);
+            }else if (bgs.length) {
+                callback(null, bgs[0].productgroupname);
                 return;
             } else {
                 callback(null, null);

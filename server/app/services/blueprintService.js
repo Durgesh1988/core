@@ -196,7 +196,7 @@ blueprintService.launch = function launch(blueprintId,reqBody, callback) {
                     next({code: 400, message: "Invalid Stack name"}, null);
                     return;
                 } else {
-                    resourceMapService.getResourceMapByStackName(stackName, function (err, data) {
+                    resourceMapService.getResourceMapByName(stackName, function (err, data) {
                         if (err) {
                             next(err, null);
                             return;
@@ -213,7 +213,7 @@ blueprintService.launch = function launch(blueprintId,reqBody, callback) {
                     next({code: 400, message: "Invalid Domain name"}, null);
                     return;
                 } else {
-                    resourceMapService.getResourceMapByStackName(domainName, function (err, data) {
+                    resourceMapService.getResourceMapByName(domainName, function (err, data) {
                         if (err) {
                             next(err, null);
                             return;
@@ -427,7 +427,6 @@ blueprintService.launchBlueprint = function launchBlueprint(blueprint, reqBody, 
     var networkProfile = new gcpNetworkProfileModel(blueprint.networkProfile);
     if (networkProfile) {
         var providerId = networkProfile.providerId;
-
         providerService.getProvider(providerId, function(err, provider) {
             if (err) {
                 var error = new Error("Error while fetching Provider.");
@@ -475,7 +474,7 @@ blueprintService.launchBlueprint = function launchBlueprint(blueprint, reqBody, 
 
                                 var timestampStarted = new Date().getTime();
                                 logsDao.insertLog({
-                                    referenceId: instanceData.id,
+                                    instanceId: instanceData.id,
                                     err: false,
                                     log: "Starting instance",
                                     timestamp: timestampStarted

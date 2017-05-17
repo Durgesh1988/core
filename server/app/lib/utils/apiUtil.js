@@ -11,9 +11,9 @@ var fileIo = require('_pr/lib/utils/fileio');
 
 var ApiUtil = function() {
 
-    this.messageFormatter=function(formattedMessage,replaceTextObj,callback){
+    this.messageFormatter=function(formattedMessage,replaceTextObj){
         var resultMessage = formatMessage(formattedMessage,replaceTextObj);
-        callback(null,resultMessage);
+        return resultMessage;
     }
     this.errorResponse=function(code,field){
         var errObj={};
@@ -48,6 +48,21 @@ var ApiUtil = function() {
             }
         })
     };
+
+    this.writeFile = function(filePath,data,callback){
+        fileIo.writeFile(filePath, JSON.stringify(data), false, function (err) {
+            if (err) {
+                logger.error("Unable to write file");
+                callback(err,null);
+                return;
+            } else {
+                logger.debug("getTreeForNew is Done");
+                callback(null,true);
+                return;
+            }
+        })
+    };
+
     this.createCronJobPattern= function(scheduler){
         scheduler.cronRepeatEvery = parseInt(scheduler.cronRepeatEvery);
         var startOn = null,endOn = null;

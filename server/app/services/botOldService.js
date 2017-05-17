@@ -31,12 +31,12 @@ var appConfig = require('_pr/config');
 const fileHound= require('filehound');
 const yamlJs= require('yamljs');
 const gitHubService = require('_pr/services/gitHubService.js');
+var settingService = require('_pr/services/settingsService');
+const errorType = 'botOldService';
 
-const errorType = 'botsService';
+var botOldService = module.exports = {};
 
-var botsService = module.exports = {};
-
-botsService.createOrUpdateBots = function createOrUpdateBots(botsDetail,linkedCategory,linkedSubCategory,callback) {
+botOldService.createOrUpdateBots = function createOrUpdateBots(botsDetail,linkedCategory,linkedSubCategory,callback) {
     logger.debug("In createOrUpdateBots....");
     var botsObj = {
         botId: botsDetail._id,
@@ -103,7 +103,7 @@ botsService.createOrUpdateBots = function createOrUpdateBots(botsDetail,linkedCa
     });
 }
 
-botsService.updateBotsScheduler = function updateBotsScheduler(botId,botObj,callback) {
+botOldService.updateBotsScheduler = function updateBotsScheduler(botId,botObj,callback) {
     if(botObj.botScheduler  && botObj.botScheduler !== null && Object.keys(botObj.botScheduler).length !== 0) {
         botObj.botScheduler = apiUtil.createCronJobPattern(botObj.botScheduler);
         botObj.isBotScheduled =true;
@@ -165,7 +165,7 @@ botsService.updateBotsScheduler = function updateBotsScheduler(botId,botObj,call
     });
 }
 
-botsService.getBotsList = function getBotsList(botsQuery,actionStatus,serviceNowCheck,callback) {
+botOldService.getBotsList = function getBotsList(botsQuery,actionStatus,serviceNowCheck,userName,callback) {
     var reqData = {};
     async.waterfall([
         function(next) {
@@ -194,10 +194,28 @@ botsService.getBotsList = function getBotsList(botsQuery,actionStatus,serviceNow
                             }
                         }
                         queryObj.queryObj.botId = {$in:botsIds};
-                        botOld.getBotsList(queryObj, next);
+                        settingService.getOrgUserFilter(userName,function(err,orgIds){
+                            if(err){
+                                next(err,null);
+                            }else if(orgIds.length > 0){
+                                queryObj.queryObj['orgId'] = {$in:orgIds};
+                                botOld.getBotsList(queryObj, next);
+                            }else{
+                                botOld.getBotsList(queryObj, next);
+                            }
+                        });
                     } else {
                         queryObj.queryObj.botId = null;
-                        botOld.getBotsList(queryObj, next);
+                        settingService.getOrgUserFilter(userName,function(err,orgIds){
+                            if(err){
+                                next(err,null);
+                            }else if(orgIds.length > 0){
+                                queryObj.queryObj['orgId'] = {$in:orgIds};
+                                botOld.getBotsList(queryObj, next);
+                            }else{
+                                botOld.getBotsList(queryObj, next);
+                            }
+                        });
                     }
                 });
             }else if(serviceNowCheck === true){
@@ -218,14 +236,41 @@ botsService.getBotsList = function getBotsList(botsQuery,actionStatus,serviceNow
                             }
                         }
                         queryObj.queryObj.botId = {$in:botsIds};
-                        botOld.getBotsList(queryObj, next);
+                        settingService.getOrgUserFilter(userName,function(err,orgIds){
+                            if(err){
+                                next(err,null);
+                            }else if(orgIds.length > 0){
+                                queryObj.queryObj['orgId'] = {$in:orgIds};
+                                botOld.getBotsList(queryObj, next);
+                            }else{
+                                botOld.getBotsList(queryObj, next);
+                            }
+                        });
                     } else {
                         queryObj.queryObj.botId = null;
-                        botOld.getBotsList(queryObj, next);
+                        settingService.getOrgUserFilter(userName,function(err,orgIds){
+                            if(err){
+                                next(err,null);
+                            }else if(orgIds.length > 0){
+                                queryObj.queryObj['orgId'] = {$in:orgIds};
+                                botOld.getBotsList(queryObj, next);
+                            }else{
+                                botOld.getBotsList(queryObj, next);
+                            }
+                        });
                     }
                 });
             } else{
-                botOld.getBotsList(queryObj, next);
+                settingService.getOrgUserFilter(userName,function(err,orgIds){
+                    if(err){
+                        next(err,null);
+                    }else if(orgIds.length > 0){
+                        queryObj.queryObj['orgId'] = {$in:orgIds};
+                        botOld.getBotsList(queryObj, next);
+                    }else{
+                        botOld.getBotsList(queryObj, next);
+                    }
+                });
             }
         },
         function(botList, next) {
@@ -244,7 +289,7 @@ botsService.getBotsList = function getBotsList(botsQuery,actionStatus,serviceNow
                     apiUtil.paginationResponse(filterBotList, reqData, callback);
                 },
                 botSummary:function(callback){
-                   auditTrailService.getBOTsSummary(botsQuery,'BOTOLD',callback)
+                   auditTrailService.getBOTsSummary(botsQuery,'BOTOLD',userName,callback)
                }
             },function(err,data){
                if(err){
@@ -270,7 +315,7 @@ botsService.getBotsList = function getBotsList(botsQuery,actionStatus,serviceNow
     });
 }
 
-botsService.removeSoftBotsById = function removeSoftBotsById(botId,callback){
+botOldService.removeSoftBotsById = function removeSoftBotsById(botId,callback){
     async.waterfall([
         function(next){
             botOld.getBotsById(botId,next);
@@ -310,7 +355,7 @@ botsService.removeSoftBotsById = function removeSoftBotsById(botId,callback){
         }
     });
 }
-botsService.removeBotsById = function removeBotsById(botId,callback){
+botOldService.removeBotsById = function removeBotsById(botId,callback){
     botOld.removeBotsById(botId,function(err,data){
         if(err){
             logger.error(err);
@@ -322,7 +367,7 @@ botsService.removeBotsById = function removeBotsById(botId,callback){
     });
 }
 
-botsService.getBotsHistory = function getBotsHistory(botId,botsQuery,serviceNowCheck,callback){
+botOldService.getBotsHistory = function getBotsHistory(botId,botsQuery,serviceNowCheck,callback){
     var reqData = {};
     async.waterfall([
         function(next) {
@@ -355,68 +400,129 @@ botsService.getBotsHistory = function getBotsHistory(botId,botsQuery,serviceNowC
     });
 }
 
-botsService.updateSavedTimePerBots = function updateSavedTimePerBots(botId,auditType,callback){
-    var query = {
-        auditType: auditType,
-        isDeleted: false,
-        auditId: botId
-    };
-    auditTrail.getAuditTrails(query, function (err, botAuditTrail) {
-        if (err) {
-            logger.error("Error in Fetching Audit Trail.", err);
-            callback(err, null);
-        }
-        if (botAuditTrail.length > 0) {
-            var totalTimeInSeconds = 0;
-            for (var m = 0; m < botAuditTrail.length; m++) {
-                if (botAuditTrail[m].endedOn && botAuditTrail[m].endedOn !== null
-                    && botAuditTrail[m].auditTrailConfig.manualExecutionTime
-                    && botAuditTrail[m].auditTrailConfig.manualExecutionTime !== null
-                    && botAuditTrail[m].actionStatus ==='success' ) {
-                    var executionTime = getExecutionTime(botAuditTrail[m].endedOn, botAuditTrail[m].startedOn);
-                    totalTimeInSeconds = totalTimeInSeconds + ((botAuditTrail[m].auditTrailConfig.manualExecutionTime * 60) - executionTime);
+botOldService.updateSavedTimePerBots = function updateSavedTimePerBots(botId,auditId,auditType,callback){
+    async.waterfall([
+        function(next){
+            auditTrail.getAuditTrailsById(auditId,next);
+        },
+        function(auditTrails,next) {
+            if (auditTrails.length > 0 && auditTrails[0].endedOn
+                && auditTrails[0].endedOn !== null && auditTrails[0].auditTrailConfig.manualExecutionTime
+                && auditTrails[0].auditTrailConfig.manualExecutionTime !== null && auditTrails[0].actionStatus === 'success') {
+                var seconds = 0, minutes = 0, hours = 0;
+                var executionTime = getExecutionTime(auditTrails[0].endedOn, auditTrails[0].startedOn);
+                seconds = ((auditTrails[0].auditTrailConfig.manualExecutionTime * 60) - executionTime);
+                if (seconds >= 60) {
+                    minutes = minutes + Math.floor(seconds / 60);
+                    seconds = seconds % 60;
                 }
-            }
-            var totalTimeInMinutes = Math.round(totalTimeInSeconds / 60);
-            var result = {
-                hours: Math.floor(totalTimeInMinutes / 60),
-                minutes: totalTimeInMinutes % 60
-            }
-            if(auditType==='BOTOLD') {
-                botOld.updateBotsDetail(botId, {
-                    savedTime: result,
-                    executionCount: botAuditTrail.length
-                }, function (err, data) {
+                if (minutes >= 60) {
+                    hours = hours + Math.floor(minutes / 60);
+                    minutes = minutes % 60;
+                }
+                var result = {
+                    hours: hours,
+                    minutes: minutes,
+                    seconds: seconds
+                }
+                auditTrail.updateAuditTrails(auditId, {savedTime: result}, function (err, data) {
                     if (err) {
                         logger.error(err);
-                        callback(err, null);
-                        return;
                     }
-                    callback(null, data);
-                    return;
+                    next(null, auditTrails);
                 })
-            }else{
-                botDao.updateBotsDetail(botId, {
-                    savedTime: result,
-                    executionCount: botAuditTrail.length
-                }, function (err, data) {
-                    if (err) {
-                        logger.error(err);
-                        callback(err, null);
-                        return;
-                    }
-                    callback(null, data);
-                    return;
-                })
+            } else {
+                next(null, auditTrails);
             }
+        }], function(auditTrails,next) {
+            var query = {
+                auditType: auditType,
+                isDeleted: false,
+                auditId: botId
+            };
+            auditTrail.getAuditTrails(query, function (err, botAuditTrail) {
+                if (err) {
+                    logger.error("Error in Fetching Audit Trail.", err);
+                    next(err, null);
+                } else if (botAuditTrail.length > 0) {
+                    var seconds = 0, minutes = 0, hours = 0, days = 0,successCount = 0,failedCount = 0,srnCount = 0;
+                    for (var m = 0; m < botAuditTrail.length; m++) {
+                        if (botAuditTrail[m].savedTime && botAuditTrail[m].actionStatus ==='success') {
+                            successCount = successCount + 1;
+                            seconds = seconds + botAuditTrail[m].savedTime.seconds;
+                            minutes = minutes + botAuditTrail[m].savedTime.minutes;
+                            hours = hours + botAuditTrail[m].savedTime.hours;
+                        }
+                        if(botAuditTrail[m].actionStatus ==='success' && botAuditTrail[m].auditTrailConfig.serviceNowTicketRefObj
+                            && botAuditTrail[m].auditTrailConfig.serviceNowTicketRefObj !== null){
+                            srnCount = srnCount + 1;
+                        }
+                        if(botAuditTrail[m].actionStatus ==='failed'){
+                            failedCount = failedCount + 1;
+                        }
+                    }
+                    if (seconds >= 60) {
+                        minutes = minutes + Math.floor(seconds / 60);
+                        seconds = seconds % 60;
+                    }
+                    if (minutes >= 60) {
+                        hours = hours + Math.floor(minutes / 60);
+                        minutes = minutes % 60;
+                    }
+                    if (hours >= 24) {
+                        days = days + Math.floor(hours / 60);
+                        hours = minutes % 24
+                    }
+                    var result = {
+                        days: days,
+                        hours: hours,
+                        minutes: minutes,
+                        seconds: seconds
+                    }
+                    if (auditType === 'BOTOLD') {
+                        botOld.updateBotsDetail(botId, {
+                            savedTime: result,
+                            executionCount: botAuditTrail.length
+                        }, function (err, data) {
+                            if (err) {
+                                logger.error(err);
+                                callback(err, null);
+                                return;
+                            }
+                            callback(null, data);
+                            return;
+                        })
+                    } else {
+                        botDao.updateBotsDetail(botId, {
+                            savedTime: result,
+                            successExecutionCount: successCount,
+                            failedExecutionCount: failedCount,
+                            srnSuccessExecutionCount: srnCount,
+                            executionCount: botAuditTrail.length
+                        }, function (err, data) {
+                            if (err) {
+                                logger.error(err);
+                                callback(err, null);
+                                return;
+                            }
+                            callback(null, data);
+                            return;
+                        })
+                    }
+                }
+            });
+        },function(err,results) {
+        if (err) {
+            callback(err, null);
+            return;
         } else {
-            callback(null, botAuditTrail);
+            callback(null, results);
             return;
         }
-    });
+    })
 }
 
-botsService.getPerticularBotsHistory = function getPerticularBotsHistory(botId,historyId,callback){
+botOldService.getPerticularBotsHistory = function getPerticularBotsHistory(botId,historyId,callback){
     async.waterfall([
         function(next){
             botOld.getBotsById(botId,next);
@@ -454,7 +560,7 @@ botsService.getPerticularBotsHistory = function getPerticularBotsHistory(botId,h
     });
 }
 
-botsService.executeBots = function executeBots(botId,reqBody,callback){
+botOldService.executeBots = function executeBots(botId,reqBody,callback){
     async.waterfall([
         function(next){
             if(reqBody !== null
@@ -522,7 +628,7 @@ botsService.executeBots = function executeBots(botId,reqBody,callback){
     });
 }
 
-botsService.syncBotsWithGitHub = function syncBotsWithGitHub(gitHubId,callback){
+botOldService.syncBotsWithGitHub = function syncBotsWithGitHub(gitHubId,callback){
     async.waterfall([
         function(next) {
             gitHubService.getGitHubById(gitHubId,next);

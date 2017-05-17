@@ -10,7 +10,6 @@
     angular.module('dashboard.bots')
     .controller('libraryCtrl',['$scope', '$rootScope', 'moment', '$state', 'genericServices','$filter', 'confirmbox', 'toastr', 'workzoneUIUtils', '$modal', 'uiGridOptionsService', '$timeout', 'botsCreateService', function ($scope, $rootScope, moment, $state, genSevs, $filter, confirmbox, toastr, workzoneUIUtils, $modal, uiGridOptionsService, $timeout, botsCreateService) {
 
-        $rootScope.onBodyLoading = false;
         var treeNames = ['BOTs','Library'];
         $rootScope.$emit('treeNameUpdate', treeNames);
         var lib=this;
@@ -31,6 +30,7 @@
         $scope.paginationParams.sortOrder = 'desc';
         $scope.botLibrarySearch = '';
         $scope.showOriginalSpinner = true;
+        $scope.noShowForServiceNow = true;
         $scope.showLoadRecord = function() {
             $scope.showLoadMore = false;
             $scope.showRecords = false;
@@ -60,6 +60,21 @@
             ];
             $scope.botLibGridOptions.data=[];
             angular.extend($scope.botLibGridOptions,botLibraryUIGridDefaults.gridOption);
+
+            $scope.botServiceNowLibGridOptions = {};
+            $scope.botServiceNowLibGridOptions.columnDefs = [
+                { name:'Ticket No.',displayName: 'Ticket No.',field:'srnTicketNo',cellTemplate:'<a target="_blank" href="{{row.entity.srnTicketLink}}">{{row.entity.srnTicketNo}}</a>',cellTooltip: true},
+                { name: 'Category',displayName: 'Category',field:'srnTicketCategory',cellTooltip: true},
+                { name: 'botName',displayName: 'BOT Name',field:'name',cellTemplate:'<a ui-sref="dashboard.bots.botsDescription({botDetail:row.entity,listType:1})">{{row.entity.name}}</a>',cellTooltip: true},
+                { name: 'Description',field:'srnTicketDesc',cellTooltip: true},
+                { name: 'Status',field:'srnTicketStatus',cellTooltip: true},
+                { name: 'Priority',field:'srnTicketPriority',cellTooltip: true},
+                { name: 'Created',field:'srnTicketCreatedOn ',cellTemplate:'<span title="{{row.entity.srnTicketCreatedOn  | timestampToLocaleTime}}">{{row.entity.srnTicketCreatedOn  | timestampToLocaleTime}}</span>', cellTooltip: true},
+                { name: 'Resolved',field:'srnTicketResolvedAt', cellTemplate:'<span title="{{row.entity.srnTicketResolvedAt  | timestampToLocaleTime}}">{{row.entity.srnTicketResolvedAt  | timestampToLocaleTime}}</span>', cellTooltip: true},
+                { name: 'Resolved By',field:'srnTicketResolvedBy'}
+            ];
+            $scope.botServiceNowLibGridOptions.data=[];
+            angular.extend($scope.botServiceNowLibGridOptions,botLibraryUIGridDefaults.gridOption);
         };
         $scope.initGrids();
         /*APIs registered are triggered as ui-grid is configured 
@@ -80,6 +95,28 @@
                     $scope.paginationParams.pageSize = pageSize;
                     $scope.currentCardPage = newPage;
                     $scope.botLibraryGridView();
+                });
+            }
+        });
+
+        /*APIs registered are triggered as ui-grid is configured 
+        for server side(external) pagination.*/
+        angular.extend($scope.botServiceNowLibGridOptions,botLibraryUIGridDefaults.gridOption, {
+            onRegisterApi :function(gridApi) {
+                $scope.gridApi = gridApi;
+                gridApi.core.on.sortChanged($scope, function(grid, sortColumns) {
+                    if (sortColumns[0] && sortColumns[0].field && sortColumns[0].sort && sortColumns[0].sort.direction) {
+                        $scope.paginationParams.sortBy = sortColumns[0].field;
+                        $scope.paginationParams.sortOrder = sortColumns[0].sort.direction;
+                        $scope.botServiceNowLibraryGridView();
+                    }
+                });
+                //Pagination for page and pageSize
+                gridApi.pagination.on.paginationChanged($scope, function(newPage, pageSize) {
+                    $scope.paginationParams.page = newPage;
+                    $scope.paginationParams.pageSize = pageSize;
+                    $scope.currentCardPage = newPage;
+                    $scope.botServiceNowLibraryGridView();
                 });
             }
         });
@@ -142,7 +179,83 @@
             $scope.botLibrarySearch = '';
         };
 
+        $scope.botServiceNowLibraryGridView = function() {
+            $scope.isBotDetailsLoading = true;
+            lib.gridOptions=[];
+            var param={
+                inlineLoader:true,
+                url:'/bot?serviceNowCheck=true&page=' + $scope.paginationParams.page +'&pageSize=' + $scope.paginationParams.pageSize +'&sortBy=' + $scope.paginationParams.sortBy +'&sortOrder=' + $scope.paginationParams.sortOrder
+            };
+            genSevs.promiseGet(param).then(function (result) {
+                $timeout(function() {
+                    $scope.showLoadRecord();
+                    $scope.botServiceNowLibGridOptions.data =  result.bots;
+                    $scope.isBotServiceNowPageLoading = false;
+                    $scope.isBotDetailsLoading = false;
+                }, 100);
+            }, function(error) {
+                $scope.isBotServiceNowPageLoading = false;
+                $scope.isBotDetailsLoading = false;
+                toastr.error(error);
+                $scope.errorMessage = "No Records found";
+            });
+        };
+
+        $scope.blueprintExecute = function(botsDetails) {
+            if(botsDetails){
+                botsCreateService.getBlueprintList(botsDetails.orgId,botsDetails.subType,botsDetails.execution[0].name).then(function(response){
+                    $scope.originalBlueprintList=[];
+                    if(response.blueprints.length>0){
+                        $scope.originalBlueprintList = response.blueprints;
+                        var reqBody = {};
+                        reqBody.blueprintIds = [$scope.originalBlueprintList[0]._id];
+                        reqBody.type = 'blueprints'
+                        botsCreateService.getBlueprintDetails($scope.originalBlueprintList[0]._id).then(function(response){
+                            $modal.open({
+                                animate: true,
+                                templateUrl: "src/partials/sections/dashboard/workzone/blueprint/popups/blueprintLaunchParams.html",
+                                controller: "blueprintLaunchParamsCtrl as bPLP",
+                                backdrop : 'static',
+                                keyboard: false,
+                                resolve: {
+                                    items: function() {
+                                        return response;
+                                    }
+                                }
+                            }).result.then(function(blueprintObj) {
+                                reqBody.monitorId = blueprintObj.monitorId;
+                                reqBody.domainName = blueprintObj.domainName;
+                                reqBody.envId = blueprintObj.launchEnv;
+                                reqBody.tagServer = blueprintObj.tagServer;
+                                reqBody.stackName = blueprintObj.stackName;
+                                botsCreateService.botExecute(botsDetails.id,reqBody).then(function (response) {
+                                    genSevs.showLogsForBots(response);
+                                    $rootScope.$emit('BOTS_LIBRARY_REFRESH');
+                                },
+                                function (error) {
+                                    if(error) {
+                                        error = error.responseText || error;
+                                        if (error.message) {
+                                            toastr.error(error.message);
+                                        } else {
+                                            toastr.error(error);
+                                        }
+                                    }
+                                });
+                            }, function() {
+
+                            });
+                        })
+                    } else {
+                        toastr.error('No Matching Blueprint Found in the Database');
+                        return false;
+                    }
+                });
+            }
+        }
+
         $scope.botLibraryGridView = function() {
+            $rootScope.onBodyLoading = false;
             $scope.isBotDetailsLoading = true;
             lib.gridOptions=[];
             var param={
@@ -173,7 +286,6 @@
                     $scope.statusBar = "Showing " + ($scope.botLibGridOptions.data.length === 0 ? "0" : "1") + " to " + $filter('number')($scope.botLibGridOptions.data.length) + " of " + $filter('number')(result.metaData.totalRecords) + " entries";
                     $scope.isBotLibraryPageLoading = false;
                     $scope.isBotDetailsLoading = false;
-                    //$scope.filterBy();
                 }, 100);
             }, function(error) {
                 $scope.isBotLibraryPageLoading = false;
@@ -185,6 +297,10 @@
 
 
         $scope.botStatus = function() {
+            if($scope.botLibAction || $scope.botLibType || $scope.botLibCategory) {
+                $rootScope.applyFilter();
+                return false;
+            }
             if($scope.totalBotsSelected) {
                 $scope.botLibraryGridView();
             } else if($scope.runningBotsselected) {
@@ -261,31 +377,6 @@
             $scope.botStatus();
         };
 
-        /*$scope.filterBy = function() {
-            if($scope.botLibFilter === 'botType') {
-                $scope.filterByBotType = true;
-                $scope.filterByTaskType = false;
-                $scope.filterByCategory = false;
-                $scope.subFilterBy = false;
-            } else if($scope.botLibFilter === 'taskType') {
-                $scope.filterByTaskType = true;
-                $scope.filterByBotType = false;
-                $scope.filterByCategory = false;
-                $scope.subFilterBy = false;
-            } else if($scope.botLibFilter === 'category') {
-                $scope.filterByCategory = true;
-                $scope.filterByBotType = false;
-                $scope.filterByTaskType = false;
-                $scope.subFilterBy = false;
-            } else {
-                $scope.subFilterBy = true;
-                $scope.filterByBotType = false;
-                $scope.filterByTaskType = false;
-                $scope.filterByCategory = false;
-                //$scope.showAllBots();
-            }
-        };*/
-
         $rootScope.applyFilter = function() {
             var param={};
             if ($scope.botLibAction) {
@@ -311,12 +402,20 @@
                 if($scope.isCardViewActive){
                     $scope.botLibGridOptions.data = result.bots;
                     $scope.botSummary = result.botSummary;
+                    if(result.metaData.totalRecords >= 24) {
+                        $scope.showLoadMore = true;
+                        $scope.showRecords = true;
+                    }
+                    if(result.metaData.totalRecords === $scope.botLibGridOptions.data.length) {
+                        $scope.showLoadRecord();
+                    }
                     for(var i=0;i<result.bots.length;i++){
                         $scope.imageForCard(result.bots[i]);
                     }
                 } else {
                     $scope.botLibGridOptions.data = result.bots;
                 }
+                $scope.botsDetails(result);
                 $scope.isBotLibraryPageLoading = false;
                 $scope.isOpenSidebar = false;
             }, function(error) {
@@ -364,6 +463,8 @@
             }
         };
 
+
+
         var gridBottomSpace = 250;
         $scope.gridHeight = workzoneUIUtils.makeTabScrollable('botLibraryPage') - gridBottomSpace;
 
@@ -397,6 +498,7 @@
 
         $scope.RefreshBotsLibrary = function() {
             $scope.isBotDetailsLoading = true;
+            $scope.noShowForServiceNow = true;
             $scope.isBotLibraryPageLoading = true;
             $scope.showLoadMore = false;
             $scope.showRecords = false;
@@ -416,6 +518,7 @@
             $scope.botStatus();
         };
         $scope.showAllBots = function() {
+            $scope.noShowForServiceNow = true;
             $scope.clearSearchString();
             $scope.isBotLibraryPageLoading = true;
             $scope.botLibGridOptions.data = [];
@@ -425,9 +528,11 @@
             $scope.runningBotsselected = false;
             $scope.failedBotsselected = false;
             $scope.scheduledBotsSelected = false;
+            $scope.paginationParams.pageSize = 24;
             $scope.botLibraryGridView();
         };
         $scope.showBotsRunning = function(resetPage) {
+            $scope.noShowForServiceNow = true;
             $scope.clearSearchString();
             $scope.isBotLibraryPageLoading = true;
             $scope.showLoadRecord();
@@ -435,6 +540,7 @@
             $scope.totalBotsSelected = false;
             $scope.failedBotsselected = false;
             $scope.scheduledBotsSelected = false;
+            $scope.paginationParams.pageSize = 24;
             lib.gridOptions.data=[];
             if(resetPage){
                 $scope.botLibGridOptions.data = [];
@@ -459,6 +565,7 @@
             });
         };
         $scope.showFailedBots = function(resetPage) {
+            $scope.noShowForServiceNow = true;
             $scope.clearSearchString();
             $scope.isBotLibraryPageLoading = true;
             $scope.showLoadRecord();
@@ -466,6 +573,7 @@
             $scope.runningBotsselected = false;
             $scope.totalBotsSelected = false;
             $scope.scheduledBotsSelected = false;
+            $scope.paginationParams.pageSize = 24;
             lib.gridOptions.data=[];
             if(resetPage){
                 $scope.botLibGridOptions.data = [];
@@ -491,92 +599,19 @@
         };
         $scope.showScheduledBots = function(resetPage) {
             $scope.clearSearchString();
-           // lib.summary();
-            $scope.isBotLibraryPageLoading = true;
+            $scope.isBotServiceNowPageLoading = true;
             $scope.showLoadRecord();
             $scope.failedBotsselected = false;
             $scope.runningBotsselected = false;
             $scope.totalBotsSelected = false;
             $scope.scheduledBotsSelected = true;
+            $scope.noShowForServiceNow = false;
+            $scope.showForServiceNow = true;
+            $scope.paginationParams.pageSize = 10;
             lib.gridOptions.data=[];
-            if(resetPage){
-                $scope.botLibGridOptions.data = [];
-                $scope.paginationParams.page = 1;
-                $scope.botLibGridOptions.paginationCurrentPage = $scope.paginationParams.page;
-            }
-            var param={
-                inlineLoader:true,
-                url:'/bot?serviceNowCheck=true&page=' + $scope.botLibGridOptions.paginationCurrentPage +'&pageSize=' + $scope.paginationParams.pageSize +'&sortBy=' + $scope.paginationParams.sortBy +'&sortOrder=' + $scope.paginationParams.sortOrder
-            };
-            genSevs.promiseGet(param).then(function (result) {
-                if($scope.isCardViewActive){
-                    $scope.botLibGridOptions.data = $scope.botLibGridOptions.data.concat(result.bots);
-                    for(var i=0;i<result.bots.length;i++){
-                        $scope.imageForCard(result.bots[i]);
-                    }
-                } else {
-                    $scope.botLibGridOptions.data = result.bots;
-                }
-                $scope.botsDetails(result);
-                $scope.statusBar = "Showing " + ($scope.botLibGridOptions.data.length === 0 ? "0" : "1") + " to " + $filter('number')($scope.botLibGridOptions.data.length) + " of " + $filter('number')(result.metaData.totalRecords) + " entries";
-            });
+            $scope.botServiceNowLibraryGridView();
         };
         
         $scope.setCardView();
-    }]).controller('botInfoCtrl',['$scope', 'items', '$modalInstance', function ($scope, items, $modalInstance) {
-        $scope.botInfo = items;
-        $scope.cancel= function() {
-            $modalInstance.dismiss('cancel');
-        };
-    }]).controller('confirmBotRunCtrl', ['$scope', '$modal', '$modalInstance', 'items', 'genericServices','toastr', '$rootScope', function ($scope, $modal, $modalInstance, items, genSevs, toastr, $rootScope) {
-            $scope.botId = items.botId;
-            $scope.isJobRunExecuting = false;
-
-            var helper = {
-                botLogModal: function(id,historyId,taskType) {
-                    $modal.open({
-                        animation: true,
-                        templateUrl: 'src/partials/sections/dashboard/bots/view/botExecutionLogs.html',
-                        controller: 'botExecutionLogsCtrl as botExecLogCtrl',
-                        backdrop: 'static',
-                        keyboard: false,
-                        resolve: {
-                            items: function() {
-                                return {
-                                    taskId: id,
-                                    historyId: historyId,
-                                    taskType: taskType
-                                };
-                            }
-                        }
-                    });
-                }
-            };
-
-            $scope.cancel = function () {
-                $modalInstance.dismiss('cancel');
-            };
-
-            $scope.runJob = function () {
-                $scope.isJobRunExecuting = true;
-                var param={
-                    inlineLoader:true,
-                    url:'/bot' + items.botId + '/execute'
-                };
-                genSevs.promisePost(param).then(function (response) {
-                    $modalInstance.close(response.data);
-                    $rootScope.$emit('BOTS_LIBRARY_REFRESH');
-                    helper.botLogModal(items.botId, response.historyId, response.taskType);
-                },
-                function (error) {
-                    error = error.responseText || error;
-                    if (error.message) {
-                        toastr.error(error.message);
-                    } else {
-                        toastr.error(error);
-                    }
-                });
-            };
-        }
-    ]);
+    }]);
 })(angular);

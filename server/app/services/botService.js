@@ -28,101 +28,43 @@ var scriptExecutor = require('_pr/engine/bots/scriptExecutor.js');
 var chefExecutor = require('_pr/engine/bots/chefExecutor.js');
 var blueprintExecutor = require('_pr/engine/bots/blueprintExecutor.js');
 var jenkinsExecutor = require('_pr/engine/bots/jenkinsExecutor.js');
-var fileIo = require('_pr/lib/utils/fileio');
+var apiExecutor = require('_pr/engine/bots/apiExecutor.js');
 var masterUtil = require('_pr/lib/utils/masterUtil.js');
 var uuid = require('node-uuid');
-
+var settingService = require('_pr/services/settingsService');
+var commonService = require('_pr/services/commonService');
 
 const fileHound= require('filehound');
 const yamlJs= require('yamljs');
 const gitHubService = require('_pr/services/gitHubService.js');
 
-const errorType = 'botsNewService';
+const errorType = 'botService';
 
-var botsNewService = module.exports = {};
+var botService = module.exports = {};
 
-botsNewService.createNew = function createNew(reqBody,callback) {
-    fileUpload.getReadStreamFileByFileId(reqBody.fileId, function (err, fileDetail) {
+botService.createNew = function createNew(reqBody,callback) {
+    commonService.convertJson2Yml(reqBody,function(err,ymlData){
         if (err) {
-            logger.error("Error in reading YAML File.");
+            logger.error(err);
             callback(err, null);
             return;
-        } else {
-            var fileName = uuid.v4() + '_' + fileDetail.fileName;
-            var desPath = appConfig.scriptDir + fileName;
-            fileIo.writeFile(desPath, fileDetail.fileData, false, function (err) {
+        }else {
+            botDao.createNew(ymlData, function (err, data) {
                 if (err) {
-                    logger.error("Unable to write file");
+                    logger.error(err);
                     callback(err, null);
                     return;
                 } else {
-                    yamlJs.load(desPath, function (result) {
-                        if (result !== null) {
-                            var paramObj = {};
-                            if (reqBody.type === 'chef') {
-                                paramObj = {
-                                    data: {
-                                        runlist: reqBody.runlist,
-                                        attributes: reqBody.attributes
-                                    }
-                                }
-                            } else if (reqBody.type === 'script') {
-                                paramObj = {
-                                    scriptId: reqBody.scriptId,
-                                    data: reqBody.params
-                                }
-                            } else if (reqBody.type === 'jenkins') {
-                                paramObj = {
-                                    jenkinsServerId: reqBody.jenkinsServerId,
-                                    jenkinsBuildName: reqBody.jenkinsBuildName,
-                                    data: reqBody.params
-                                }
-                            } else {
-                                paramObj = paramObj;
-                            }
-                            var botsObj = {
-                                ymlJson: result,
-                                name: result.name,
-                                id: result.id,
-                                desc: result.desc,
-                                category: reqBody.category,
-                                action: result.action,
-                                execution: result.execution,
-                                type: reqBody.type,
-                                subType: reqBody.subType,
-                                inputFormFields: result.input[0].form,
-                                isParameterized:result.isParameterized?result.isParameterized:false,
-                                outputOptions: result.output,
-                                ymlDocFileId: reqBody.fileId,
-                                orgId: reqBody.orgId,
-                                orgName: reqBody.orgName,
-                                manualExecutionTime: reqBody.standardTime,
-                                params: paramObj,
-                                source: "Catalyst"
-                            }
-                            botDao.createNew(botsObj, function (err, data) {
-                                if (err) {
-                                    logger.error(err);
-                                    callback(err, null);
-                                    removeScriptFile(desPath);
-                                    return;
-                                } else {
-                                    callback(null, data);
-                                    removeScriptFile(desPath);
-                                    return;
-                                }
-                            });
-
-                        }
-                    })
+                    callback(null, data);
+                    return;
                 }
             });
         }
-    });
+    })
 }
 
-botsNewService.updateBotsScheduler = function updateBotsScheduler(botId,botObj,callback) {
-    if(botObj.scheduler  && botObj.scheduler !== null && Object.keys(botObj.scheduler).length !== 0) {
+botService.updateBotsScheduler = function updateBotsScheduler(botId,botObj,callback) {
+    if(botObj.scheduler  && botObj.scheduler !== null && Object.keys(botObj.scheduler).length !== 0 && botObj.isScheduled && botObj.isScheduled === true) {
         botObj.scheduler = apiUtil.createCronJobPattern(botObj.scheduler);
         botObj.isScheduled =true;
     }else{
@@ -152,7 +94,7 @@ botsNewService.updateBotsScheduler = function updateBotsScheduler(botId,botObj,c
     });
 }
 
-botsNewService.removeBotsById = function removeBotsById(botId,callback){
+botService.removeBotsById = function removeBotsById(botId,callback){
     async.parallel({
         bots: function(callback){
             botDao.removeBotsById(botId,callback);
@@ -172,7 +114,7 @@ botsNewService.removeBotsById = function removeBotsById(botId,callback){
     });
 }
 
-botsNewService.getBotsList = function getBotsList(botsQuery,actionStatus,serviceNowCheck,callback) {
+botService.getBotsList = function getBotsList(botsQuery,actionStatus,serviceNowCheck,userName,callback) {
     var reqData = {};
     async.waterfall([
         function(next) {
@@ -184,44 +126,45 @@ botsNewService.getBotsList = function getBotsList(botsQuery,actionStatus,service
             apiUtil.databaseUtil(paginationReq, next);
         },
         function(queryObj, next) {
-            if(actionStatus !== null){
-                var query = {
-                    auditType: 'BOT',
-                    actionStatus: actionStatus,
-                    isDeleted:false
-                };
-                var botsIds = [];
-                auditTrail.getAuditTrails(query, function(err,botsAudits){
-                    if(err){
-                        next(err,null);
-                    }else if (botsAudits.length > 0) {
-                        for (var i = 0; i < botsAudits.length; i++) {
-                            if (botsIds.indexOf(botsAudits[i].auditId) < 0) {
-                                botsIds.push(botsAudits[i].auditId);
-                            }
+            settingService.getOrgUserFilter(userName, function (err, orgIds) {
+                if (err) {
+                    next(err, null);
+                }
+                if(orgIds.length > 0){
+                    queryObj.queryObj['orgId'] = {$in: orgIds};
+                }
+                if(actionStatus !== null) {
+                    queryObj.queryObj['lastExecutionStatus'] = actionStatus;
+                }
+                if(serviceNowCheck === true) {
+                    queryObj.queryObj['srnSuccessExecutionCount'] = {$gt:0};
+                    var botIds = [];
+                    botDao.getAllBots(queryObj.queryObj,function(err,botData){
+                        if(err){
+                            next(err,null);
                         }
-                        queryObj.queryObj._id = {$in:botsIds};
-                        botDao.getBotsList(queryObj, next);
-                    }else {
-                        queryObj.queryObj._id = null;
-                        botDao.getBotsList(queryObj, next);
-                    }
-                });
-            }else if(serviceNowCheck === true){
-                delete queryObj.queryObj;
-                queryObj.queryObj = {
-                    auditType: 'BOT',
-                    actionStatus: 'success',
-                    'auditTrailConfig.serviceNowTicketRefObj':{$ne:null},
-                    isDeleted:false
-                };
-                auditTrail.getAuditTrailList(queryObj, next);
-            }else{
-                botDao.getBotsList(queryObj, next);
-            }
+                        if(botData.length > 0){
+                            botData.forEach(function(bot){
+                                botIds.push(bot._id);
+                            })
+                        }
+                        if(botIds.length > 0){
+                            delete queryObj.queryObj;
+                            queryObj.queryObj = {
+                                auditId: {$in:botIds}
+                            }
+                            auditTrail.getAuditTrailList(queryObj,next);
+                        }else{
+                            botDao.getBotsList(queryObj, next);
+                        }
+                    })
+                }else{
+                    botDao.getBotsList(queryObj, next);
+                }
+            });
         },
         function(botList, next) {
-            addYmlFileDetailsForBots(botList,reqData,next);
+            addYmlFileDetailsForBots(botList,reqData,serviceNowCheck,next);
         },
         function(filterBotList, next) {
            async.parallel({
@@ -229,7 +172,7 @@ botsNewService.getBotsList = function getBotsList(botsQuery,actionStatus,service
                    apiUtil.paginationResponse(filterBotList, reqData, callback);
                },
                botSummary:function(callback){
-                   auditTrailService.getBOTsSummary(botsQuery,'BOT',callback)
+                   auditTrailService.getBOTsSummary(botsQuery,'BOT',userName,callback)
                }
            },function(err,data){
                if(err){
@@ -245,17 +188,17 @@ botsNewService.getBotsList = function getBotsList(botsQuery,actionStatus,service
             callback(err,null);
             return;
         }
-        var resultObj = {            
-            bots : results.botList.bots,            
-            metaData : results.botList.metaData,            
-            botSummary: results.botSummary        
-        }        
+        var resultObj = {
+            bots : results.botList.bots,
+            metaData : results.botList.metaData,
+            botSummary: results.botSummary
+        }
         callback(null,resultObj);
         return;
     });
 }
 
-botsNewService.executeBots = function executeBots(botsId,reqBody,userName,executionType,schedulerCallCheck,callback){
+botService.executeBots = function executeBots(botsId,reqBody,userName,executionType,schedulerCallCheck,callback){
     var botId = null;
     var botRemoteServerDetails = {}
     async.waterfall([
@@ -263,45 +206,34 @@ botsNewService.executeBots = function executeBots(botsId,reqBody,userName,execut
             botDao.getBotsByBotId(botsId, next);
         },
         function(bots,next){
-            botId = bots[0]._id;
-            if(reqBody !== null && reqBody !== '' && (bots[0].type === 'script' || bots[0].type === 'chef') && schedulerCallCheck === false){
-                masterUtil.getBotRemoteServerDetailByOrgId(bots[0].orgId,function(err,botServerDetails) {
-                    if (err) {
-                        logger.error("Error while fetching BOTs Server Details");
-                        callback(err, null);
-                        return;
-                    } else if (botServerDetails !== null) {
-                        botRemoteServerDetails.hostIP = botServerDetails.hostIP;
-                        botRemoteServerDetails.hostPort = botServerDetails.hostPort;
-                        encryptedParam(reqBody, next);
-                    } else {
-                        var error = new Error();
-                        error.message = 'BOTs Remote Engine is not configured or not in running mode';
-                        error.status = 403;
-                        next(error, null);
-                    }
-                });
-
-            }else{
-                next(null,reqBody);
-            }
-        },
-        function(paramObj,next) {
-            if(schedulerCallCheck === false) {
-                var botObj = {
-                    params: paramObj
+            if(bots.length > 0) {
+                botId = bots[0]._id;
+                if (reqBody !== null && reqBody !== '' && (bots[0].type === 'script' || bots[0].type === 'chef') && schedulerCallCheck === false) {
+                    masterUtil.getBotRemoteServerDetailByOrgId(bots[0].orgId, function (err, botServerDetails) {
+                        if (err) {
+                            logger.error("Error while fetching BOTs Server Details");
+                            callback(err, null);
+                            return;
+                        } else if (botServerDetails !== null) {
+                            botRemoteServerDetails.hostIP = botServerDetails.hostIP;
+                            botRemoteServerDetails.hostPort = botServerDetails.hostPort;
+                            next(null,bots);
+                        } else {
+                            var error = new Error();
+                            error.message = 'BOTs Remote Engine is not configured or not in running mode';
+                            error.status = 403;
+                            next(error, null);
+                        }
+                    });
+                } else {
+                    next(null,bots);
                 }
-                if(reqBody.nodeIds){
-                    botObj.params.nodeIds = reqBody.nodeIds;
-                }
-                console.log(JSON.stringify(botObj));
-                botDao.updateBotsDetail(botId,botObj, next);
             }else{
-                next(null,paramObj);
+                var error = new Error();
+                error.message = 'There is no record available in DB against BOT : '+botsId;
+                error.status = 403;
+                next(error, null);
             }
-        },
-        function(updateStatus,next) {
-            botDao.getBotsById(botId, next);
         },
         function(botDetails,next) {
             if(botDetails.length > 0){
@@ -325,7 +257,7 @@ botsNewService.executeBots = function executeBots(botsId,reqBody,userName,execut
                                     executionType:botDetails[0].type,
                                     manualExecutionTime:botDetails[0].manualExecutionTime
                                 };
-                                if(reqBody.ref){
+                                if(schedulerCallCheck === false && reqBody.ref && reqBody.ref !== null){
                                     auditTrailObj.serviceNowTicketRefObj =  {
                                         ticketNo:reqBody.ref
                                     }
@@ -336,16 +268,25 @@ botsNewService.executeBots = function executeBots(botsId,reqBody,userName,execut
                                 var uuid = require('node-uuid');
                                 auditTrail.actionId = uuid.v4();
                                 if (botDetails[0].type === 'script') {
-                                    scriptExecutor.execute(botDetails[0], auditTrail, userName, executionType, botRemoteServerDetails, next);
-                                } else if (botDetails[0].type === 'chef') {
-                                    chefExecutor.execute(botDetails[0], auditTrail, userName, executionType, botRemoteServerDetails, next);
-                                } else if (botDetails[0].type === 'blueprints') {
-                                    reqBody = botDetails[0].params;
+                                    scriptExecutor.execute(botDetails[0],reqBody, auditTrail, userName, executionType, botRemoteServerDetails,schedulerCallCheck, next);
+                                }else if (botDetails[0].type === 'chef') {
+                                    chefExecutor.execute(botDetails[0],reqBody, auditTrail, userName, executionType, botRemoteServerDetails,schedulerCallCheck, next);
+                                }else if (botDetails[0].type === 'blueprints' || botDetails[0].type === 'blueprint') {
+                                    if(schedulerCallCheck === true) {
+                                        reqBody = botDetails[0].params;
+                                    }
                                     blueprintExecutor.execute(botDetails[0].id,auditTrail, reqBody, userName, next);
-                                } else if (botDetails[0].type === 'jenkins') {
-                                    reqBody = botDetails[0].params;
+                                }else if (botDetails[0].type === 'jenkins') {
+                                    if(schedulerCallCheck === true) {
+                                        reqBody = botDetails[0].params;
+                                    }
                                     jenkinsExecutor.execute(botDetails[0],auditTrail, reqBody, userName, next);
-                                } else {
+                                }else if (botDetails[0].type === 'api') {
+                                    if(schedulerCallCheck === true) {
+                                        reqBody = botDetails[0].params;
+                                    }
+                                    apiExecutor.execute(botDetails[0],reqBody,auditTrail, userName,botRemoteServerDetails, next);
+                                }else {
                                     var err = new Error('Invalid BOT Type');
                                     err.status = 400;
                                     err.msg = 'Invalid BOT Type';
@@ -363,13 +304,37 @@ botsNewService.executeBots = function executeBots(botsId,reqBody,userName,execut
                         })
                     },
                     bots: function (callback) {
-                        if(botDetails[0].type === 'script' || botDetails[0].type === 'chef' || botDetails[0].type === 'jenkins' || botDetails[0].type === 'blueprints') {
+                        if((botDetails[0].type === 'script' || botDetails[0].type === 'chef' || botDetails[0].type === 'jenkins' || botDetails[0].type === 'blueprints' || botDetails[0].type === 'blueprint')
+                            && schedulerCallCheck === true) {
                             var botExecutionCount = botDetails[0].executionCount + 1;
                             var botUpdateObj = {
                                 executionCount: botExecutionCount,
-                                lastRunTime: new Date().getTime()
+                                lastRunTime: new Date().getTime(),
+                                lastExecutionStatus:"running"
                             }
                             botDao.updateBotsDetail(botId, botUpdateObj, callback);
+                        } else if((botDetails[0].type === 'script' || botDetails[0].type === 'chef' || botDetails[0].type === 'jenkins' || botDetails[0].type === 'blueprints' || botDetails[0].type === 'blueprint')
+                            && schedulerCallCheck === false) {
+                            encryptedParam(reqBody,botDetails[0].inputFormFields,function(err,encryptData){
+                                if(err){
+                                    var err = new Error('Data encryption is Failed');
+                                    err.status = 400;
+                                    err.message = 'Data encryption is Failed';
+                                    callback(err, null);
+                                }else{
+                                    var botExecutionCount = botDetails[0].executionCount + 1;
+                                    var botUpdateObj = {
+                                        executionCount: botExecutionCount,
+                                        lastRunTime: new Date().getTime(),
+                                        params:encryptData,
+                                        lastExecutionStatus:"running"
+                                    }
+                                    if(reqBody.nodeIds){
+                                        botUpdateObj.params.nodeIds = reqBody.nodeIds;
+                                    }
+                                    botDao.updateBotsDetail(botId, botUpdateObj, callback);
+                                }
+                            });
                         }else{
                             var err = new Error('Invalid BOT Type');
                             err.status = 400;
@@ -386,7 +351,7 @@ botsNewService.executeBots = function executeBots(botsId,reqBody,userName,execut
                 });
             }else {
                next(null,botDetails);
-            }  
+            }
         }
     ],function(err,results){
         if(err){
@@ -400,7 +365,7 @@ botsNewService.executeBots = function executeBots(botsId,reqBody,userName,execut
     });
 }
 
-botsNewService.syncSingleBotsWithGitHub = function syncSingleBotsWithGitHub(botId,callback){
+botService.syncSingleBotsWithGitHub = function syncSingleBotsWithGitHub(botId,callback){
     async.waterfall([
         function(next) {
             botDao.getBotsByBotId(botId,next);
@@ -443,7 +408,6 @@ botsNewService.syncSingleBotsWithGitHub = function syncSingleBotsWithGitHub(botI
                                     next(err, null);
                                 } else {
                                     var botsObj = {
-                                        ymlJson: result,
                                         name: result.name,
                                         id: result.id,
                                         desc: result.desc,
@@ -498,7 +462,7 @@ botsNewService.syncSingleBotsWithGitHub = function syncSingleBotsWithGitHub(botI
 }
 
 
-botsNewService.syncBotsWithGitHub = function syncBotsWithGitHub(gitHubId,callback){
+botService.syncBotsWithGitHub = function syncBotsWithGitHub(gitHubId,callback){
     async.waterfall([
         function(next) {
             async.parallel({
@@ -560,6 +524,7 @@ botsNewService.syncBotsWithGitHub = function syncBotsWithGitHub(gitHubId,callbac
             }, next);
         },
         function(gitHubDetails,next){
+            process.setMaxListeners(100);
             if(gitHubDetails.botSync !== null){
                 var botFactoryDirPath = appConfig.botCurrentFactoryDir;
                 fileHound.create()
@@ -567,7 +532,6 @@ botsNewService.syncBotsWithGitHub = function syncBotsWithGitHub(gitHubId,callbac
                     .ext('yaml')
                     .find().then(function(files){
                     if(files.length > 0){
-                        process.setMaxListeners(files.length);
                         var botObjList = [];
                         for(var i = 0; i < files.length; i++){
                             (function(ymlFile){
@@ -595,7 +559,6 @@ botsNewService.syncBotsWithGitHub = function syncBotsWithGitHub(gitHubId,callbac
                                                });
                                            }else{
                                                 var botsObj={
-                                                    ymlJson:result,
                                                     name:result.name,
                                                     gitHubId:gitHubDetails.botSync._id,
                                                     gitHubRepoName:gitHubDetails.botSync.repositoryName,
@@ -605,10 +568,10 @@ botsNewService.syncBotsWithGitHub = function syncBotsWithGitHub(gitHubId,callbac
                                                     category:result.botCategory?result.botCategory:result.functionality,
                                                     action:result.action,
                                                     execution:result.execution?result.execution:[],
-                                                    manualExecutionTime:result.manualExecutionTime?result.manualExecutionTime:10,
+                                                    manualExecutionTime:result.manualExecutionTime ? result.manualExecutionTime:10,
                                                     type:result.type,
                                                     subType:result.subtype,
-                                                    inputFormFields:result.input !==null ?result.input[0].form:result.input,
+                                                    inputFormFields:result.input && result.input !==null ? result.input[0].form:null,
                                                     outputOptions:result.output,
                                                     ymlDocFileId:ymlDocFileId,
                                                     orgId:gitHubDetails.botSync.orgId,
@@ -724,7 +687,7 @@ botsNewService.syncBotsWithGitHub = function syncBotsWithGitHub(gitHubId,callbac
     });
 }
 
-botsNewService.getBotsHistory = function getBotsHistory(botId,botsQuery,callback){
+botService.getBotsHistory = function getBotsHistory(botId,botsQuery,callback){
     var reqData = {};
     async.waterfall([
         function(next) {
@@ -754,7 +717,7 @@ botsNewService.getBotsHistory = function getBotsHistory(botId,botsQuery,callback
     });
 }
 
-botsNewService.getParticularBotsHistory = function getParticularBotsHistory(botId,historyId,callback){
+botService.getParticularBotsHistory = function getParticularBotsHistory(botId,historyId,callback){
     async.waterfall([
         function(next){
             botDao.getBotsById(botId,next);
@@ -784,7 +747,7 @@ botsNewService.getParticularBotsHistory = function getParticularBotsHistory(botI
     });
 }
 
-botsNewService.getParticularBotsHistoryLogs= function getParticularBotsHistoryLogs(botId,historyId,timestamp,callback){
+botService.getParticularBotsHistoryLogs= function getParticularBotsHistoryLogs(botId,historyId,timestamp,callback){
     async.waterfall([
         function(next){
             botDao.getBotsById(botId,next);
@@ -792,7 +755,15 @@ botsNewService.getParticularBotsHistoryLogs= function getParticularBotsHistoryLo
         function(bots,next){
             if(bots.length > 0) {
                 var logsDao = require('_pr/model/dao/logsdao.js');
-                logsDao.getLogsByReferenceId(historyId, timestamp,next);
+                var queryObj = {
+                    botRefId: historyId
+                }
+                if (timestamp) {
+                    queryObj.timestamp = {
+                        "$gt": timestamp
+                    };
+                }
+                logsDao.getLogsDetails(queryObj,next);
             }else{
                 next({errCode:400, errMsg:"Bots is not exist in DB"},null)
             }
@@ -809,7 +780,7 @@ botsNewService.getParticularBotsHistoryLogs= function getParticularBotsHistoryLo
     });
 }
 
-botsNewService.updateLastBotExecutionStatus= function updateLastBotExecutionStatus(botId,status,callback){
+botService.updateLastBotExecutionStatus= function updateLastBotExecutionStatus(botId,status,callback){
     async.waterfall([
         function(next){
             botDao.getBotsById(botId,next);
@@ -837,24 +808,27 @@ botsNewService.updateLastBotExecutionStatus= function updateLastBotExecutionStat
 }
 
 
-function encryptedParam(paramDetails, callback) {
+function encryptedParam(paramDetails,inputFormDetails, callback) {
     var cryptoConfig = appConfig.cryptoSettings;
     var cryptography = new Cryptography(cryptoConfig.algorithm, cryptoConfig.password);
     var encryptedObj = {};
-    if (paramDetails.category === 'script' && paramDetails.data && paramDetails.data !== null) {
-            Object.keys(paramDetails.data).forEach(function (key) {
-                var encryptedText = cryptography.encryptText(paramDetails.data[key], cryptoConfig.encryptionEncoding,
+    if (paramDetails.type === 'script' && paramDetails.data && paramDetails.data !== null) {
+        inputFormDetails.forEach(function(formField){
+            if(formField.type === 'password' || formField.type === 'restricted'){
+                var encryptedText = cryptography.encryptText(paramDetails.data[formField.name], cryptoConfig.encryptionEncoding,
                     cryptoConfig.decryptionEncoding);
-                encryptedObj[key] = encryptedText;
-            });
-            paramDetails.data = encryptedObj;
-            callback(null, paramDetails);
+                paramDetails.data[formField.name] = encryptedText;
+            }
+        })
+        callback(null, paramDetails);
+        return;
     }else{
         callback(null, paramDetails);
+        return;
     }
 }
 
-function addYmlFileDetailsForBots(bots,reqData,callback){
+function addYmlFileDetailsForBots(bots,reqData,serviceNowCheck,callback){
     if (bots.docs.length === 0) {
         return callback(null,bots);
     }else{
@@ -862,7 +836,7 @@ function addYmlFileDetailsForBots(bots,reqData,callback){
         var botsObj={};
         for(var i = 0; i <bots.docs.length; i++){
             (function(bot){
-                if(bot.ymlDocFileId && bot.ymlDocFileId !== null) {
+                if(serviceNowCheck ===false) {
                     fileUpload.getReadStreamFileByFileId(bot.ymlDocFileId, function (err, file) {
                         if (err) {
                             logger.error("Error in fetching YAML Documents for : " + bot.name + " " + err);
@@ -887,6 +861,9 @@ function addYmlFileDetailsForBots(bots,reqData,callback){
                             isScheduled: bot.isScheduled,
                             manualExecutionTime: bot.manualExecutionTime,
                             executionCount: bot.executionCount,
+                            successExecutionCount: bot.successExecutionCount,
+                            failedExecutionCount: bot.failedExecutionCount,
+                            srnSuccessExecutionCount: bot.srnSuccessExecutionCount,
                             scheduler: bot.scheduler,
                             createdOn: bot.createdOn,
                             lastRunTime: bot.lastRunTime,
@@ -894,6 +871,9 @@ function addYmlFileDetailsForBots(bots,reqData,callback){
                             source: bot.source,
                             execution:bot.execution,
                             lastExecutionStatus:bot.lastExecutionStatus
+                        }
+                        if(bot.type === 'jenkins') {
+                            botsObj.isParameterized = bot.isParameterized;
                         }
                         botsList.push(botsObj);
                         if (botsList.length === bots.docs.length) {
@@ -941,24 +921,29 @@ function addYmlFileDetailsForBots(bots,reqData,callback){
                                         scheduler: botDetails[0].scheduler,
                                         createdOn: botDetails[0].createdOn,
                                         lastRunTime: botDetails[0].lastRunTime,
-                                        savedTime: botDetails[0].savedTime,
+                                        savedTime: bot.savedTime,
                                         source: botDetails[0].source,
                                         execution:botDetails[0].execution,
                                         lastExecutionStatus: botDetails[0].lastExecutionStatus,
-                                        srnTicketNo: bot.auditTrailConfig.serviceNowTicketRefObj.ticketNo,
-                                        srnTicketLink: bot.auditTrailConfig.serviceNowTicketRefObj.ticketLink,
-                                        srnTicketShortDesc: bot.auditTrailConfig.serviceNowTicketRefObj.shortDesc,
-                                        srnTicketDesc: bot.auditTrailConfig.serviceNowTicketRefObj.desc,
-                                        srnTicketStatus: bot.auditTrailConfig.serviceNowTicketRefObj.state,
-                                        srnTicketPriority: bot.auditTrailConfig.serviceNowTicketRefObj.priority,
-                                        srnTicketResolvedBy: bot.auditTrailConfig.serviceNowTicketRefObj.resolvedBy,
-                                        srnTicketResolvedAt: bot.auditTrailConfig.serviceNowTicketRefObj.resolvedAt,
-                                        srnTicketCreatedOn: bot.auditTrailConfig.serviceNowTicketRefObj.createdOn,
-                                        srnTicketClosedAt: bot.auditTrailConfig.serviceNowTicketRefObj.closedAt,
-                                        srnTicketOpenedAt: bot.auditTrailConfig.serviceNowTicketRefObj.openedAt,
-                                        srnTicketUpdatedOn: bot.auditTrailConfig.serviceNowTicketRefObj.updatedOn,
-                                        srnTicketCategory: bot.auditTrailConfig.serviceNowTicketRefObj.category,
                                         actionLogId: bot.actionLogId
+                                    }
+                                    if(serviceNowCheck === true){
+                                        botsObj.srnTicketNo = bot.auditTrailConfig.serviceNowTicketRefObj.ticketNo;
+                                        botsObj.srnTicketLink = bot.auditTrailConfig.serviceNowTicketRefObj.ticketLink;
+                                        botsObj.srnTicketShortDesc = bot.auditTrailConfig.serviceNowTicketRefObj.shortDesc;
+                                        botsObj.srnTicketDesc = bot.auditTrailConfig.serviceNowTicketRefObj.desc;
+                                        botsObj.srnTicketStatus = bot.auditTrailConfig.serviceNowTicketRefObj.state;
+                                        botsObj.srnTicketPriority = bot.auditTrailConfig.serviceNowTicketRefObj.priority;
+                                        botsObj.srnTicketResolvedBy = bot.auditTrailConfig.serviceNowTicketRefObj.resolvedBy;
+                                        botsObj.srnTicketResolvedAt = bot.auditTrailConfig.serviceNowTicketRefObj.resolvedAt;
+                                        botsObj.srnTicketCreatedOn = bot.auditTrailConfig.serviceNowTicketRefObj.createdOn;
+                                        botsObj.srnTicketClosedAt = bot.auditTrailConfig.serviceNowTicketRefObj.closedAt;
+                                        botsObj.srnTicketOpenedAt = bot.auditTrailConfig.serviceNowTicketRefObj.openedAt;
+                                        botsObj.srnTicketUpdatedOn = bot.auditTrailConfig.serviceNowTicketRefObj.updatedOn;
+                                        botsObj.srnTicketCategory = bot.auditTrailConfig.serviceNowTicketRefObj.category;
+                                    }
+                                    if(bot.type === 'jenkins') {
+                                        botsObj.isParameterized = bot.isParameterized;
                                     }
                                     botsList.push(botsObj);
                                     if (botsList.length === bots.docs.length) {
@@ -981,16 +966,4 @@ function addYmlFileDetailsForBots(bots,reqData,callback){
             })(bots.docs[i]);
         }
     }
-}
-
-function removeScriptFile(filePath) {
-    fileIo.removeFile(filePath, function(err, result) {
-        if (err) {
-            logger.error(err);
-            return;
-        } else {
-            logger.debug("Successfully Remove file");
-            return
-        }
-    })
 }

@@ -48,7 +48,8 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
     });
 
     app.get('/audit-trail/bots-summary', function(req,res){
-        auditTrailService.getBOTsSummary(req.query,'BOTOLD',function(err,botSummary){
+        var loggedUser = req.session.user.cn;
+        auditTrailService.getBOTsSummary(req.query,'BOTOLD',loggedUser,function(err,botSummary){
             if(err){
                 logger.error(err);
                 return res.status(500).send(err);
@@ -93,24 +94,6 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
             });
     }
 
-    app.get('/audit-trail/instance-action/:actionId', getInstanceAction);
-
-    function getInstanceAction(req, res, next) {
-        async.waterfall(
-            [
-
-                function(next) {
-                    instanceLogModel.getLogsByActionId(req.params.actionId, next);
-                }
-            ],
-            function(err, results) {
-                if (err)
-                    return res.status(500).send(err);
-                else
-                    return res.status(200).send(results);
-            });
-    }
-
     app.get('/audit-trail/task-action', getTaskActionList);
 
     function getTaskActionList(req, res, next) {
@@ -138,36 +121,13 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
             });
     }
 
-    app.get('/audit-trail/task-action/:actionId', getTaskAction);
-
-    function getTaskAction(req, res, next) {
-        async.waterfall(
-            [
-
-                function(next) {
-                    instanceLogModel.getLogsByActionId(req.params.actionId, next);
-                }
-
-            ],
-            function(err, results) {
-                if (err)
-                    return res.status(500).send(err);
-                else
-                    return res.status(200).send(results);
-            });
-    }
-
     app.get('/audit-trail/instance-action/:actionId/logs', pollInstanceActionLog);
 
     function pollInstanceActionLog(req, res, next) {
-        var timestamp = req.query.timestamp;
-        if (timestamp) {
-            timestamp = parseInt(timestamp);
-        }
         async.waterfall(
             [
                 function(next) {
-                    logsDao.getLogsByReferenceId(req.params.actionId, timestamp, next);
+                    auditTrailService.getAuditTrailActionLogs(req.params.actionId, req.query.timestamp, next);
                 }
             ],
             function(err, results) {
@@ -180,14 +140,10 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
     app.get('/audit-trail/task-action/:actionId/logs', pollTaskActionLog);
 
     function pollTaskActionLog(req, res, next) {
-        var timestamp = req.query.timestamp;
-        if (timestamp) {
-            timestamp = parseInt(timestamp);
-        }
         async.waterfall(
             [
                 function(next) {
-                    logsDao.getLogsByReferenceId(req.params.actionId, timestamp, next);
+                    auditTrailService.getAuditTrailActionLogs(req.params.actionId, req.query.timestamp, next);
                 }
             ],
             function(err, results) {
@@ -231,14 +187,10 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
     app.get('/audit-trail/container-action/:actionId/logs', pollContainerActionLog);
 
     function pollContainerActionLog(req, res, next) {
-        var timestamp = req.query.timestamp;
-        if (timestamp) {
-            timestamp = parseInt(timestamp);
-        }
         async.waterfall(
             [
                 function(next) {
-                    logsDao.getLogsByReferenceId(req.params.actionId, timestamp, next);
+                    auditTrailService.getAuditTrailActionLogs(req.params.actionId, req.query.timestamp, next);
                 }
             ],
             function(err, results) {

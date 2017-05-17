@@ -42,6 +42,7 @@ var Docker = require('_pr/model/docker.js');
 var instanceLogModel = require('_pr/model/log-trail/instanceLog.js');
 var SSHExec = require('_pr/lib/utils/sshexec');
 var monitorsModel = require('_pr/model/monitors/monitors.js');
+var settingService = require('_pr/services/settingsService');
 // @TODO Authorization to be checked for all end points
 module.exports.setRoutes = function (app, sessionVerificationFunc) {
 
@@ -103,6 +104,18 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
                         paginationReq['searchColumns'] = ['instanceIP', 'instanceState', 'platformId', 'hardware.os', 'projectName', 'environmentName'];
                         apiUtil.databaseUtil(paginationReq, next);
                     },
+                    function(filterQuery,next){
+                        settingService.getOrgUserFilter(req.session.user.cn, function (err, orgIds) {
+                            if (err) {
+                                next(err);
+                            }else if(orgIds.length > 0){
+                                filterQuery.queryObj['$and'][0].orgId = { $in : orgIds };
+                                next(null,filterQuery);
+                            }else{
+                                next(null,filterQuery);
+                            }
+                        });
+                    },
                     function (queryObj, next) {
                         instancesDao.getByProviderId(queryObj, next);
                     },
@@ -134,6 +147,18 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
                         reqData = paginationReq;
                         apiUtil.databaseUtil(paginationReq, next);
                     },
+                    function(filterQuery,next){
+                        settingService.getOrgUserFilter(req.session.user.cn, function (err, orgIds) {
+                            if (err) {
+                                next(err);
+                            }else if(orgIds.length > 0){
+                                filterQuery.queryObj['$and'][0].orgId = { $in : orgIds };
+                                next(null,filterQuery);
+                            }else{
+                                next(null,filterQuery);
+                            }
+                        });
+                    },
                     function (queryObj, next) {
                         instancesDao.getByProviderId(queryObj, next);
                     },
@@ -164,6 +189,18 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
                         paginationReq['searchColumns'] = ['ip', 'platformId', 'os', 'state', 'projectName', 'environmentName', 'providerData.region'];
                         reqData = paginationReq;
                         apiUtil.databaseUtil(paginationReq, next);
+                    },
+                    function(filterQuery,next){
+                        settingService.getOrgUserFilter(req.session.user.cn, function (err, orgIds) {
+                            if (err) {
+                                next(err);
+                            }else if(orgIds.length > 0){
+                                filterQuery.queryObj['$and'][0].orgId = { $in : orgIds };
+                                next(null,filterQuery);
+                            }else{
+                                next(null,filterQuery);
+                            }
+                        });
                     },
                     function (queryObj, next) {
                         unManagedInstancesDao.getByProviderId(queryObj, next);
@@ -199,6 +236,18 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
                         paginationReq['providerId'] = req.params.providerId;
                         paginationReq['searchColumns'] = ['ip', 'platformId', 'os', 'state', 'projectName', 'environmentName', 'providerData.region'];
                         apiUtil.databaseUtil(paginationReq, next);
+                    },
+                    function(filterQuery,next){
+                        settingService.getOrgUserFilter(req.session.user.cn, function (err, orgIds) {
+                            if (err) {
+                                next(err);
+                            }else if(orgIds.length > 0){
+                                filterQuery.queryObj['$and'][0].orgId = { $in : orgIds };
+                                next(null,filterQuery);
+                            }else{
+                                next(null,filterQuery);
+                            }
+                        });
                     },
                     function (queryObj, next) {
                         unManagedInstancesDao.getByProviderId(queryObj, next);
@@ -482,7 +531,8 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
                                                                     var actionLog = instancesDao.insertBootstrapActionLog(instance.id, [], req.session.user.cn, timestampStarded);
                                                                     var logsRefernceIds = [instance.id, actionLog._id];
                                                                     logsDao.insertLog({
-                                                                        referenceId: logsRefernceIds,
+                                                                        instanceId:instance._id,
+                                                                        instanceRefId:actionLog._id,
                                                                         err: false,
                                                                         log: "Bootstrapping instance",
                                                                         timestamp: timestampStarded
@@ -507,12 +557,7 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
                                                                         startedOn: new Date().getTime(),
                                                                         createdOn: new Date().getTime(),
                                                                         providerType: "aws",
-                                                                        action: "Imported From Provider",
-                                                                        logs: [{
-                                                                                err: false,
-                                                                                log: "Bootstrapping instance",
-                                                                                timestamp: new Date().getTime()
-                                                                            }]
+                                                                        action: "Imported From Provider"
                                                                     };
 
                                                                     instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function (err, logData) {
@@ -526,18 +571,14 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
                                                                             logger.error("unable to decrypt credentials", err);
                                                                             var timestampEnded = new Date().getTime();
                                                                             logsDao.insertLog({
-                                                                                referenceId: logsRefernceIds,
+                                                                                instanceId:instance._id,
+                                                                                instanceRefId:actionLog._id,
                                                                                 err: true,
                                                                                 log: "Unable to decrypt credentials. Bootstrap Failed",
                                                                                 timestamp: timestampEnded
                                                                             });
                                                                             instancesDao.updateActionLog(instance.id, actionLog._id, false, timestampEnded);
                                                                             updateTaskStatusNode(unmanagedInstance.platformId, "server beahved unexpectedly while importing instance :" + unmanagedInstance.platformId + ". Cannot sync this node.", true, count);
-                                                                            instanceLog.logs = {
-                                                                                err: true,
-                                                                                log: "Unable to decrypt credentials. Bootstrap Failed",
-                                                                                timestamp: new Date().getTime()
-                                                                            };
                                                                             instanceLog.endedOn = new Date().getTime();
                                                                             instanceLog.actionStatus = "failed";
                                                                             instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function (err, logData) {
@@ -646,17 +687,13 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
                                                                                     if (err.message) {
                                                                                         var timestampEnded = new Date().getTime();
                                                                                         logsDao.insertLog({
-                                                                                            referenceId: logsRefernceIds,
+                                                                                            instanceId:instance._id,
+                                                                                            instanceRefId:actionLog._id,
                                                                                             err: true,
                                                                                             log: err.message,
                                                                                             timestamp: timestampEnded
                                                                                         });
                                                                                         instanceLog.actionStatus = "failed";
-                                                                                        instanceLog.logs = {
-                                                                                            err: true,
-                                                                                            log: err.message,
-                                                                                            timestamp: new Date().getTime()
-                                                                                        };
                                                                                         instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function (err, logData) {
                                                                                             if (err) {
                                                                                                 logger.error("Failed to create or update instanceLog: ", err);
@@ -666,17 +703,13 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
                                                                                     }
                                                                                     var timestampEnded = new Date().getTime();
                                                                                     logsDao.insertLog({
-                                                                                        referenceId: logsRefernceIds,
+                                                                                        instanceId:instance._id,
+                                                                                        instanceRefId:actionLog._id,
                                                                                         err: true,
                                                                                         log: "Bootstrap Failed",
                                                                                         timestamp: timestampEnded
                                                                                     });
                                                                                     instancesDao.updateActionLog(instance.id, actionLog._id, false, timestampEnded);
-                                                                                    instanceLog.logs = {
-                                                                                        err: true,
-                                                                                        log: "Bootstrap Failed",
-                                                                                        timestamp: new Date().getTime()
-                                                                                    };
                                                                                     instanceLog.actionStatus = "failed";
                                                                                     instanceLog.endedOn = new Date().getTime();
                                                                                     instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function (err, logData) {
@@ -712,17 +745,13 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
 
                                                                                         var timestampEnded = new Date().getTime();
                                                                                         logsDao.insertLog({
-                                                                                            referenceId: logsRefernceIds,
+                                                                                            instanceId:instance._id,
+                                                                                            instanceRefId:actionLog._id,
                                                                                             err: false,
                                                                                             log: "Instance Bootstrapped Successfully",
                                                                                             timestamp: timestampEnded
                                                                                         });
                                                                                         instancesDao.updateActionLog(instance.id, actionLog._id, true, timestampEnded);
-                                                                                        instanceLog.logs = {
-                                                                                            err: false,
-                                                                                            log: "Instance Bootstrapped Successfully",
-                                                                                            timestamp: new Date().getTime()
-                                                                                        };
                                                                                         instanceLog.actionStatus = "success";
                                                                                         instanceLog.endedOn = new Date().getTime();
                                                                                         instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function (err, logData) {
@@ -865,17 +894,13 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
 
                                                                                         var timestampEnded = new Date().getTime();
                                                                                         logsDao.insertLog({
-                                                                                            referenceId: logsRefernceIds,
+                                                                                            instanceId:instance._id,
+                                                                                            instanceRefId:actionLog._id,
                                                                                             err: true,
                                                                                             log: "Bootstrap Failed",
                                                                                             timestamp: timestampEnded
                                                                                         });
                                                                                         instancesDao.updateActionLog(instance.id, actionLog._id, false, timestampEnded);
-                                                                                        instanceLog.logs = {
-                                                                                            err: true,
-                                                                                            log: "Bootstrap Failed",
-                                                                                            timestamp: new Date().getTime()
-                                                                                        };
                                                                                         instanceLog.actionStatus = "failed";
                                                                                         instanceLog.endedOn = new Date().getTime();
                                                                                         instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function (err, logData) {
@@ -887,41 +912,20 @@ module.exports.setRoutes = function (app, sessionVerificationFunc) {
                                                                                 }
 
                                                                             }, function (stdOutData) {
-
                                                                                 logsDao.insertLog({
-                                                                                    referenceId: logsRefernceIds,
+                                                                                    instanceId:instance._id,
+                                                                                    instanceRefId:actionLog._id,
                                                                                     err: false,
                                                                                     log: stdOutData.toString('ascii'),
                                                                                     timestamp: new Date().getTime()
                                                                                 });
-                                                                                instanceLog.logs = {
-                                                                                    err: false,
-                                                                                    log: stdOutData.toString('ascii'),
-                                                                                    timestamp: new Date().getTime()
-                                                                                };
-                                                                                instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function (err, logData) {
-                                                                                    if (err) {
-                                                                                        logger.error("Failed to create or update instanceLog: ", err);
-                                                                                    }
-                                                                                });
-
                                                                             }, function (stdErrData) {
-
                                                                                 logsDao.insertLog({
-                                                                                    referenceId: logsRefernceIds,
+                                                                                    instanceId:instance._id,
+                                                                                    instanceRefId:actionLog._id,
                                                                                     err: true,
                                                                                     log: stdErrData.toString('ascii'),
                                                                                     timestamp: new Date().getTime()
-                                                                                });
-                                                                                instanceLog.logs = {
-                                                                                    err: true,
-                                                                                    log: stdErrData.toString('ascii'),
-                                                                                    timestamp: new Date().getTime()
-                                                                                };
-                                                                                instanceLogModel.createOrUpdate(actionLog._id, instance.id, instanceLog, function (err, logData) {
-                                                                                    if (err) {
-                                                                                        logger.error("Failed to create or update instanceLog: ", err);
-                                                                                    }
                                                                                 });
                                                                             });
                                                                         }); //end of chefcleanup

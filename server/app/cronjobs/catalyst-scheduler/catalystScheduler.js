@@ -6,6 +6,7 @@ var botDao = require('_pr/model/bots/1.1/bot.js');
 var schedulerService = require('_pr/services/schedulerService');
 var async = require('async');
 var cronTab = require('node-crontab');
+var auditQueue = require('_pr/config/global-data.js');
 var catalystSync = module.exports = {};
 
 catalystSync.executeScheduledInstances = function executeScheduledInstances() {
@@ -213,6 +214,38 @@ catalystSync.executeNewScheduledBots = function executeNewScheduledBots() {
             return;
         }
     });
+}
+
+catalystSync.getBotAuditLogData = function getBotAuditLogData(){
+    logger.debug("Get Bot Audit log Data updating.....")
+    setInterval( function () {
+        var logQueue = auditQueue.getAudit();
+        if(logQueue.length > 0){
+            var auditList = [];
+            logQueue.forEach(function(log){
+                if(log.remoteAuditId) {
+                    auditList.push(log.remoteAuditId);
+                }
+            });
+            if(auditList.length > 0 && (logQueue[0].serverUrl !=='undefined' || typeof logQueue[0].serverUrl !=='undefined')) {
+                schedulerService.getExecutorAuditTrailDetails(auditList, logQueue[0].serverUrl, function (err, data) {
+                    if (err) {
+                        logger.error("Error in Getting Audit-Trail Details:", err);
+                        return;
+                    } else {
+                        logger.debug("BOT Audit Trail is Successfully Executed");
+                        return;
+                    }
+                });
+            }else{
+                logger.debug("Audit-Queue is not valid: ",auditList,logQueue[0].serverUrl);
+                return;
+            }
+        }else{
+            logger.debug("There is no Audit Trails Data");
+            return;
+        }
+    },5000)
 }
 
 function cancelOldCronJobs(ids){

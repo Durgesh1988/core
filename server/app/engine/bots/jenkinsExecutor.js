@@ -19,10 +19,7 @@ var configmgmtDao = require('_pr/model/d4dmasters/configmgmt.js');
 var Jenkins = require('_pr/lib/jenkins');
 var auditTrailService = require('_pr/services/auditTrailService.js');
 var noticeService = require('_pr/services/noticeService.js');
-
-
 const errorType = 'jenkinsExecutor';
-
 var jenkinsExecutor = module.exports = {};
 
 jenkinsExecutor.execute = function execute(jenkinsBotDetails,auditTrail,reqBody,userName,callback) {
@@ -117,7 +114,7 @@ jenkinsExecutor.execute = function execute(jenkinsBotDetails,auditTrail,reqBody,
                 }
                 if (!jobInfo.inQueue) {
                     if (jenkinsBotDetails.isParameterized && jenkinsBotDetails.isParameterized === true) {
-                        var params = reqBody.parameterized;
+                        var params = jenkinsBotDetails.execution[0].parameterized;
                         var param = {};
                         if (params.length > 0) {
                             if (reqBody.choiceParam) {
@@ -278,20 +275,20 @@ jenkinsExecutor.execute = function execute(jenkinsBotDetails,auditTrail,reqBody,
                                                             if (err) {
                                                                 logger.error("Failed to create or update bots Log: ", err);
                                                             }
-                                                        });
-                                                        var botOldService = require('_pr/services/botOldService');
-                                                        botOldService.updateSavedTimePerBots(jenkinsBotDetails._id, 'BOT', function (err, data) {
-                                                            if (err) {
-                                                                logger.error("Failed to update bots saved Time: ", err);
-                                                            }
-                                                        });
-                                                        noticeService.notice(userName, {
-                                                            title: "BOTs Execution",
-                                                            body: reqBody.data.jobName+" job is successfully build on "+jenkinsData.jenkinsname
-                                                        }, "success", function (err, data) {
-                                                            if (err) {
-                                                                logger.error("Error in Notification Service, ", err);
-                                                            }
+                                                            var botOldService = require('_pr/services/botOldService');
+                                                            botOldService.updateSavedTimePerBots(jenkinsBotDetails._id,auditTrail._id, 'BOT', function (err, data) {
+                                                                if (err) {
+                                                                    logger.error("Failed to update bots saved Time: ", err);
+                                                                }
+                                                            });
+                                                            noticeService.notice(userName, {
+                                                                title: "BOTs Execution",
+                                                                body: reqBody.data.jobName+" job is successfully build on "+jenkinsData.jenkinsname
+                                                            }, "success", function (err, data) {
+                                                                if (err) {
+                                                                    logger.error("Error in Notification Service, ", err);
+                                                                }
+                                                            });
                                                         });
                                                     }
                                                     callback(null, status);
@@ -427,20 +424,20 @@ jenkinsExecutor.execute = function execute(jenkinsBotDetails,auditTrail,reqBody,
                                                             if (err) {
                                                                 logger.error("Failed to create or update bots Log: ", err);
                                                             }
-                                                        });
-                                                        var botOldService = require('_pr/services/botOldService');
-                                                        botOldService.updateSavedTimePerBots(jenkinsBotDetails._id, 'BOT', function (err, data) {
-                                                            if (err) {
-                                                                logger.error("Failed to update bots saved Time: ", err);
-                                                            }
-                                                        });
-                                                        noticeService.notice(userName, {
-                                                            title: "Jenkins BOT Execution",
-                                                            body: reqBody.data.jobName+" job is successfully build on "+jenkinsData.jenkinsname
-                                                        }, "success", function (err, data) {
-                                                            if (err) {
-                                                                logger.error("Error in Notification Service, ", err);
-                                                            }
+                                                            var botOldService = require('_pr/services/botOldService');
+                                                            botOldService.updateSavedTimePerBots(jenkinsBotDetails._id,auditTrail._id, 'BOT', function (err, data) {
+                                                                if (err) {
+                                                                    logger.error("Failed to update bots saved Time: ", err);
+                                                                }
+                                                            });
+                                                            noticeService.notice(userName, {
+                                                                title: "Jenkins BOT Execution",
+                                                                body: reqBody.data.jobName+" job is successfully build on "+jenkinsData.jenkinsname
+                                                            }, "success", function (err, data) {
+                                                                if (err) {
+                                                                    logger.error("Error in Notification Service, ", err);
+                                                                }
+                                                            });
                                                         });
                                                     }
                                                     callback(null, status);

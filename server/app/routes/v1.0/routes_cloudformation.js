@@ -208,17 +208,13 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
                                                 logReferenceIds.push(actionLog._id);
                                             }
                                             logsDao.insertLog({
-                                                referenceId: logReferenceIds,
+                                                instanceId:instance._id,
+                                                instanceRefId:actionLog._id,
                                                 err: false,
                                                 log: "Instance Shutting-Down",
                                                 timestamp: timestampStarted
                                             });
                                             instanceLog.actionId = actionLog._id;
-                                            instanceLog.logs = {
-                                                err: false,
-                                                log: "Instance Shutting-Down",
-                                                timestamp: new Date().getTime()
-                                            };
                                             instanceLogModel.createOrUpdate(actionLog._id, instance._id, instanceLog, function(err, logData) {
                                                 if (err) {
                                                     logger.error("Failed to create or update instanceLog: ", err);
@@ -241,7 +237,7 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
                                         return;
                                     }
                                     var resourceObj = {
-                                        stackStatus:"DELETED"
+                                        state:"Deleted"
                                     }
                                     var resourceMapService = require('_pr/services/resourceMapService.js');
                                     resourceMapService.updateResourceMap(cloudFormation.stackName,resourceObj,function(err,resourceMap){
