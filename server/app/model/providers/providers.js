@@ -24,8 +24,8 @@ var providerSchema = new baseProvider();
 providerSchema.plugin(mongoosePaginate);
 
 
-providerSchema.statics.getAllByOrgs = function getAllByOrgs(orgIds, callback) {
-    this.find({orgId: {$in: orgIds}}, function(err, providers) {
+providerSchema.statics.getAllProviders = function getAllProviders(filterObj, callback) {
+    this.paginate(filterObj.queryObj, filterObj.options, function(err, providers) {
             if (err) {
                 logger.error(err);
                 return callback(err, null);
@@ -36,11 +36,8 @@ providerSchema.statics.getAllByOrgs = function getAllByOrgs(orgIds, callback) {
     );
 };
 
-// Deprecated @TODO To be deleted
-providerSchema.statics.updateById = function updateById(providerId, fields, callback) {
-    this.update(
-        {_id: providerId},
-        fields,
+providerSchema.statics.updateProviderById = function updateById(providerId, fields, callback) {
+    this.update({_id: providerId}, fields,
         function(err, result) {
             if (err) {
                 return callback(err, null);
@@ -51,9 +48,8 @@ providerSchema.statics.updateById = function updateById(providerId, fields, call
     );
 };
 
-providerSchema.statics.getById = function getById(providerId, callback) {
-    this.find(
-        {'_id': providerId, 'isDeleted': false },
+providerSchema.statics.getProviderById = function getById(providerId, callback) {
+    this.find({'_id': ObjectId(providerId)},
         function(err, providers) {
             if (err) {
                 logger.error(err);
@@ -67,10 +63,8 @@ providerSchema.statics.getById = function getById(providerId, callback) {
     );
 };
 
-providerSchema.statics.deleteById = function deleteById(providerId, callback) {
-    this.update(
-        {'_id': providerId},
-        { $set: {isDeleted: true} },
+providerSchema.statics.deleteProviderById = function deleteById(providerId, callback) {
+    this.remove({'_id': ObjectId(providerId)},
         function(err, provider) {
             if(err) {
                 logger.error(err);
@@ -83,6 +77,6 @@ providerSchema.statics.deleteById = function deleteById(providerId, callback) {
 };
 
 
-var provider = mongoose.model('providers', providerSchema);
+var provider = mongoose.model('provider', providerSchema);
 module.exports = provider;
 

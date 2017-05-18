@@ -84,6 +84,7 @@ var routesCICDDashboardService = require('./routes_cicddashboardserver');
 var notice = require('./routes_notice');
 var clientAppAccess = require('./routes_clientAppAccess');
 var routesResourceMap = require('./routes_resourceMap');
+var providers = require('./routes_providers');
 /*
  * @TODO
  * Change app to router in internal routes files
@@ -210,6 +211,8 @@ module.exports.setRoutes = function(app) {
     routesDashboardCICD.setRoutes(app,sessionVerificationFunc);
 
     routesCICDDashboardService.setRoutes(app,sessionVerificationFunc);
+
+    providers.setRoutes(app,sessionVerificationFunc);
 
     notice.setRoutes(app,sessionVerificationFunc);
     clientAppAccess.setRoutes(app,sessionVerificationFunc);

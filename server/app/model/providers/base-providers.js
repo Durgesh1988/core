@@ -18,37 +18,30 @@ var mongoose = require('mongoose');
 var util = require('util');
 var Schema = mongoose.Schema;
 
-var BaseProviderSchema = function BaseProviderSchema() {
+var ProviderSchema = function Provider() {
     Schema.apply(this, arguments);
-
     this.add({
         name: {
             type: String,
-            required: true,
-            trim: true
+            trim:true
         },
         type: {
             type: String,
-            required: true,
-            trim: true
+            trim:true,
+            required:true
         },
-        organizationId: {
+        orgId: {
             type: String,
-            required: true,
-            trim: false
-        },
-        isDeleted: {
-            type: Boolean,
-            required: true,
-            default: false
+            trim:true,
+            required:true
         },
         invalidCredentials: {
             type: Boolean,
-            required: true,
+            required: false,
             default: false
         }
     });
 };
-util.inherits(BaseProviderSchema, Schema);
+util.inherits(ProviderSchema, Schema);
 
-module.exports = BaseProviderSchema;
+module.exports = ProviderSchema;

@@ -558,17 +558,20 @@ settingsService.getSettingDetailsById=  function getSettingDetailsById(id,userNa
                 },next)
             },
             function(userDetails,next){
-                if(userDetails.length > 0 && userDetails[0].orgname_rowid[0] === ""){
+                if(userDetails.length > 0 && userDetails[0].orgname_rowid === ""){
+                    console.log("Durgesh");
                     userCheck = false;
                     d4dModelNew.d4dModelMastersOrg.find({
                         id: "1",
                         active: true
                     },next)
-                }else if(userDetails.length > 0 && userDetails[0].orgname_rowid[0] !== ""){
+                }else if(userDetails.length > 0 && userDetails[0].orgname_rowid !== ""){
+                    console.log("Sharma");
+                    console.log(userDetails[0].orgname_rowid);
                     d4dModelNew.d4dModelMastersOrg.find({
                         id: "1",
                         active: true,
-                        rowid:{$in:userDetails[0].orgname_rowid}
+                        rowid:userDetails[0].orgname_rowid
                     },next)
                 }else{
                     next({message:"Invalid User.",code:500},null)
@@ -633,12 +636,12 @@ settingsService.getSettingDetailsById=  function getSettingDetailsById(id,userNa
             },
             function(masterDataList,next){
                 masterDataList.forEach(function(masterData){
-                    if(masterData.id !== '1' && masterData.orgname && masterData.orgname_rowid[0] !== ''){
-                        masterUtil.getOrgByRowId(masterData.orgname_rowid[0],function(err,orgData){
+                    if(masterData.id !== '1' && masterData.orgname && masterData.orgname_rowid !== ''){
+                        masterUtil.getOrgByRowId(masterData.orgname_rowid,function(err,orgData){
                             if(err){
                                 logger.debug("Error in fetching org-details");
                             }else{
-                                masterData.orgname = [orgData[0].orgname];
+                                masterData.orgname = orgData[0].orgname;
                             }
                         })
                     }

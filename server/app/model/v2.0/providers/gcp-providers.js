@@ -15,7 +15,7 @@
  */
 
 var logger = require('_pr/logger')(module);
-var BaseProviderSchema = require('./base-provider');
+var BaseProviderSchema = require('./base-providers');
 var Providers = require('./providers');
 var appConfig = require('_pr/config');
 var Cryptography = require('_pr/lib/utils/cryptography');
@@ -48,14 +48,12 @@ var GCPProviderSchema = new BaseProviderSchema({
 GCPProviderSchema.pre('save', function(next) {
     var cryptoConfig = appConfig.cryptoSettings;
     var cryptography = new Cryptography(cryptoConfig.algorithm, cryptoConfig.password);
-
     this.providerDetails.keyFile = cryptography.encryptText(this.providerDetails.keyFile,
         cryptoConfig.encryptionEncoding, cryptoConfig.decryptionEncoding);
     this.providerDetails.sshPublicKey = cryptography.encryptText(this.providerDetails.sshPublicKey,
         cryptoConfig.encryptionEncoding, cryptoConfig.decryptionEncoding);
     this.providerDetails.sshPrivateKey = cryptography.encryptText(this.providerDetails.sshPrivateKey,
         cryptoConfig.encryptionEncoding, cryptoConfig.decryptionEncoding);
-
     next();
 });
 

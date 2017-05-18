@@ -137,12 +137,12 @@ var d4dMastersProductGroup = new mongoose.Schema({
         validate: nameValidator
     },
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     productgroupname: {
@@ -187,12 +187,12 @@ var d4dMastersEnvironments = new mongoose.Schema({
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: false,
         trim: true
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     environmentname: {
@@ -229,11 +229,11 @@ var d4dMastersEnvironments = new mongoose.Schema({
         trim: true
     },
     projectname: {
-        type: String,
+        type: [String],
         trim: true
     },
     projectname_rowid: {
-        type: String,
+        type: [String],
         trim: true
     },
     rowid: {
@@ -253,11 +253,11 @@ var d4dMastersGeneric = new mongoose.Schema({
         default: true
     },
     orgname: {
-        type: [String],
+        type: String,
         trim: true
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     }
 }, {
@@ -300,20 +300,20 @@ var d4dMastersTeams = new mongoose.Schema({
         trim: true
     },
     projectname: {
-        type: String,
+        type: [String],
         trim: true
     },
     projectname_rowid: {
-        type: String,
+        type: [String],
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: false,
         trim: true
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     description: {
@@ -343,12 +343,12 @@ var d4dMastersProjects = new mongoose.Schema({
         validate: nameValidator
     },
     orgname: {
-        type: [String],
+        type: String,
         required: false,
         trim: true
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     projectname: {
@@ -365,11 +365,11 @@ var d4dMastersProjects = new mongoose.Schema({
         trim: true
     },
     environmentname: {
-        type: String,
+        type: [String],
         trim: true
     },
     environmentname_rowid: {
-        type: String,
+        type: [String],
         trim: true
     },
     description: {
@@ -412,13 +412,13 @@ var d4dMastersConfigManagement = new mongoose.Schema({
         validate: nameValidator
     },
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     orgrowid: {
@@ -519,22 +519,22 @@ var d4dMastersDockerConfig = new mongoose.Schema({
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     projectname: {
-        type: String,
+        type: [String],
         required: false,
         trim: true
     },
     projectname_rowid: {
-        type: String,
+        type: [String],
         required: false,
         trim: true
     },
@@ -581,25 +581,25 @@ var d4dMastersUsers = new mongoose.Schema({
         trim: true
     },
     userrolename: {
-        type: String,
+        type: [String],
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: false,
         trim: true
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     teamname: {
-        type: String,
+        type: [String],
         required: true,
         trim: true
     },
     teamname_rowid: {
-        type: String,
+        type: [String],
         required: true,
         trim: true
     },
@@ -640,12 +640,12 @@ var d4dMastersUserroles = new mongoose.Schema({
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: false,
         trim: true
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     rowid: {
@@ -680,12 +680,12 @@ var d4dMastersDesignTemplateTypes = new mongoose.Schema({
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: false,
         trim: true
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     templatetype: {
@@ -754,12 +754,12 @@ var d4dMastersTemplatesList = new mongoose.Schema({
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: false,
         trim: true
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     template_filename: {
@@ -853,12 +853,12 @@ var d4dMastersServicecommands = new mongoose.Schema({
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: false,
         trim: true
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     active: {
@@ -936,13 +936,13 @@ var d4dMastersJenkinsConfig = new mongoose.Schema({
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     folderpath: {
@@ -993,13 +993,13 @@ var d4dMastersBitbucketConfig = new mongoose.Schema({
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     active: {
@@ -1046,13 +1046,13 @@ var d4dMastersSonarqubeConfig = new mongoose.Schema({
         trim: true
     },
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     active: {
@@ -1094,13 +1094,13 @@ var d4dMastersFunctionalTestConfig = new mongoose.Schema({
         validate: nameValidator
     },
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     active: {
@@ -1150,13 +1150,13 @@ var d4dMastersOctopusConfig = new mongoose.Schema({
     },
     
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     active: {
@@ -1363,13 +1363,13 @@ var d4dMastersJira = new mongoose.Schema({
         trim: true
     },
     orgname: {
-        type: [String],
+        type:String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     jiraname: {
@@ -1414,13 +1414,13 @@ var d4dMastersPuppetServer = new mongoose.Schema({
         validate: nameValidator
     },
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     orgrowid: {
@@ -1486,13 +1486,13 @@ var d4dMastersNexusServer = new mongoose.Schema({
         validate: nameValidator
     },
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     projectname: {
@@ -1566,13 +1566,13 @@ var d4dMastersCICDDashboard = new mongoose.Schema({
         validate: nameValidator
     },
     orgname: {
-        type: [String],
+        type: String,
         required: true,
         trim: true,
         validate: nameValidator
     },
     orgname_rowid: {
-        type: [String],
+        type: String,
         trim: true
     },
     productgroupname: {

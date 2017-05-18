@@ -19,16 +19,7 @@ var instancesDao = require('_pr/model/classes/instance/instance.js');
 var shellClient = require('_pr/lib/utils/sshshell');
 var logger = require('_pr/logger')(module);
 var logsDao = require('_pr/model/dao/logsdao.js');
-
 var crontab = require('node-crontab');
-var AWSProvider = require('_pr/model/classes/masters/cloudprovider/awsCloudProvider.js');
-var vmwareProvider = require('_pr/model/classes/masters/cloudprovider/vmwareCloudProvider.js');
-var VmwareCloud = require('_pr/lib/vmware.js');
-
-var AWSKeyPair = require('_pr/model/classes/masters/cloudprovider/keyPair.js');
-var EC2 = require('_pr/lib/ec2.js');
-var appConfig = require('_pr/config');
-var Cryptography = require('_pr/lib/utils/cryptography');
 var instanceLogModel = require('_pr/model/log-trail/instanceLog.js');
 
 
