@@ -1,5 +1,9 @@
 /*
+<<<<<<< HEAD
  Copyright [2017] [Relevance Lab]
+=======
+ Copyright [2016] [Relevance Lab]
+>>>>>>> upstream/dev
 
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -46,6 +50,7 @@ commonService.convertJson2Yml = function convertJson2Yml(reqBody,callback) {
         functionality: reqBody.category,
         subType: reqBody.subType ? reqBody.subType : (reqBody.blueprintType ? reqBody.blueprintType : null),
         manualExecutionTime: parseInt(reqBody.standardTime),
+
         input: [],
         execution: [],
         output: {
@@ -161,7 +166,6 @@ commonService.convertJson2Yml = function convertJson2Yml(reqBody,callback) {
         }
         commonJson.output.msgs.text = '${jenkinsJobName} job has successfully built on ${jenkinsServerName}';
         commonJson.output.msgs.mail = 'JenkinsJobName: ${jenkinsJobName} JenkinsServerName: ${jenkinsServerName}'
-
         ymlText = yml.stringify(commonJson);
         createYML()
     } else if (reqBody.type === 'chef') {

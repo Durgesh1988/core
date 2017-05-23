@@ -44,7 +44,12 @@ noticeService.init =function init(io, address) {
             nsp.in('client-'+data.user_id).emit('notice',data);
         })
         socket.in('server').on('update',function(data){
-            nsp.in('client-'+data.user_id).emit('update',data);
+            var rooms = nsp.adapter.rooms
+            for (var room in rooms) {
+                if (!rooms[room].hasOwnProperty(room) && room =='client-'+data.id) {
+                   nsp.in('client-'+data.id).emit('update',data);
+                }
+            }
         })
         socket.on('noticeack',function(userid){
             noticeSchema.updateNotice(userid,function(err,data){
@@ -52,18 +57,25 @@ noticeService.init =function init(io, address) {
                 logger.error(err);  
             })
         })
+        socket.on('leave',function(roomData){
+            socket.leave(roomData);
+        })
         socket.on('disconnect',function(){
             socket.on('leave',function(roomData){
                 socket.leave(roomData);
             })
         })
     });
-}
-noticeService.notice = function notice(userid, message, severity, callback) {
     socketClient.on('connect', function () {
         socketClient.emit('join', 'server');
-        logger.debug('notice server room created.');
+        logger.debug('server room created.');
     });
+    socketClient.on('disconnect', function () {
+        socketClient.emit('leave', 'server');
+    })
+}
+noticeService.notice = function notice(userid, message, severity, callback) {
+    
     var noticeDetails = {
         user_id: userid,
         'message.title': message.title,
@@ -82,22 +94,15 @@ noticeService.notice = function notice(userid, message, severity, callback) {
             callback(null, {msg: 'successfully noticed'});
         }
     })
-    socketClient.on('disconnect', function () {
-        socketClient.emit('leave', 'server');
-    })
-
 }
 
-noticeService.updater = function updater(userid, dataType, updateData, callback) {
+noticeService.updater = function updater(id, dataType, updateData) {
     socketClient.on('connect', function () {
         socketClient.emit('join', 'server');
         logger.debug('update server room created.');
     });
-    socketClient.emit('update', {user_id: userid, dataType: dataType, updateData: updateData});
-    callback(null, {msg: 'successfully updated'});
-    socketClient.on('disconnect', function () {
-        socketClient.emit('leave', 'server');
-    })
+    socketClient.emit('update', {id:id, dataType: dataType, updateData: updateData});
+    return;
 }
 
 noticeService.getAllNoticeWithPagination = function getAllNoticeWithPagination(reqBody,callback) {
@@ -127,16 +132,3 @@ noticeService.getAllNoticeWithPagination = function getAllNoticeWithPagination(r
         return;
     });
 }
-
-/*noticeService.test =function test(){
-    var i=0;
-    setInterval(function(){
-        noticeService.notice('superadmin',{title:'msg '+i,body:'Test1234'},"success",function(err,data){
-            console.log(data);
-        });
-        i++;
-     }, 40000);
-}*/
-
-
-

@@ -20,7 +20,7 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
     app.all('/bot*', sessionVerificationFunc);
 
     app.get('/bot',function(req,res){
-        var actionStatus = null,serviceNowCheck =null;
+        var actionStatus = null,serviceNowCheck =false;
         var loggedUser =  req.session.user.cn;
         if(req.query.actionStatus && req.query.actionStatus !== null){
             actionStatus = req.query.actionStatus;
@@ -28,7 +28,7 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
         if(req.query.serviceNowCheck && req.query.serviceNowCheck !== null && req.query.serviceNowCheck === 'true'){
             serviceNowCheck = true;
         }
-        botService.getBotsList(req.query,actionStatus,serviceNowCheck,loggedUser, function(err,data){
+        botService.getBotsList(req.query,actionStatus,serviceNowCheck,loggedUser,function(err,data){
             if (err) {
                 return res.status(500).send(err);
             } else {
@@ -69,12 +69,7 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
     });
 
     app.get('/bot/:botId/bot-history/:historyId/logs',function(req,res){
-        var timestamp = null;
-        if (req.query.timestamp) {
-            timestamp = req.query.timestamp;
-            timestamp = parseInt(timestamp);
-        }
-        botService.getParticularBotsHistoryLogs(req.params.botId,req.params.historyId,timestamp, function(err,data){
+        botService.getParticularBotsHistoryLogs(req.params.botId,req.params.historyId, function(err,data){
             if (err) {
                 return res.status(500).send(err);
             } else {
@@ -99,7 +94,7 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
             executionType = req.query.executionType;
         }
         var reqBody = null;
-        if(req.body.type && req.body.type ==='blueprints') {
+        if(req.body.type && (req.body.type ==='blueprints' || req.body.type ==='blueprint')) {
             if (!req.body.envId) {
                 res.send(400, {
                     "message": "Invalid Environment Id"
@@ -108,7 +103,7 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
             }
             reqBody = {
                 userName: req.session.user.cn,
-                category: req.body.type,
+                type: 'blueprints',
                 permissionTo: "execute",
                 permissionSet: req.session.user.permissionset,
                 envId: req.body.envId,
@@ -121,7 +116,7 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
             }
         }else{
             reqBody = {
-                category:req.body.type,
+                type:req.body.type,
                 userName: req.session.user.cn,
                 hostProtocol: req.protocol + '://' + req.get('host'),
                 data: req.body.data?req.body.data:null,
