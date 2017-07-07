@@ -96,6 +96,7 @@ var ResourceSchema = new Schema({
     },
     configDetails: {
         id: String,
+        name:String,
         nodeName: String,
         run_list: [{
             type: String,

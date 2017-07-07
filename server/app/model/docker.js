@@ -15,36 +15,34 @@ limitations under the License.
 */
 
 
-var fileIo = require('./../lib/utils/fileio');
-var SSH = require('./../lib/utils/sshexec');
-var instancesDao = require('_pr/model/classes/instance/instance');
-var credentialCrpto = require('./../lib/credentialcryptography.js');
+var fileIo = require('_pr/lib/utils/fileio');
+var SSH = require('_pr/lib/utils/sshexec');
+var resourceModel = require('_pr/model/resources/resources');
+var credentialCrp = require('_pr/lib/credentialcryptography.js');
 var logger = require('_pr/logger')(module);
 
 var Docker = function() {
-    var that = this;
-    this.runDockerCommands = function(cmd, instanceid, callback, callbackOnStdOut, callbackOnStdErr) {
-        instancesDao.getInstanceById(instanceid, function(err, data) {
+    this.runDockerCommands = function(cmd, resourceId, callback, callbackOnStdOut, callbackOnStdErr) {
+        resourceModel.getResourceById(resourceId, function(err, data) {
             if (err) {
                 callback(err,null);
                 return;
             }
             if (data.length) {
                 logger.debug('reached docker cmd');
-                var instanceoptions = data[0];
-                credentialCrpto.decryptCredential(instanceoptions.credentials, function(err, decrptedCredentials) {
+                var instanceOptions = data[0];
+                credentialCrp.decryptCredential(instanceOptions.credentials, function(err, decryptedCredentials) {
                     if (err) {
                         callback(err);
                         return;
                     }
                     var options = {
-                        host: instanceoptions.instanceIP,
+                        host: instanceOptions.resourceDetails.publicIp,
                         port: '22',
-                        username: decrptedCredentials.username, //'ec2-user',
-                        privateKey: decrptedCredentials.pemFileLocation, //'/development/catalyst/D4DFE/D4D/config/catalyst.pem'
-                        password: decrptedCredentials.password
+                        username: decryptedCredentials.username, //'ec2-user',
+                        privateKey: decryptedCredentials.pemFileLocation, //'/development/catalyst/D4DFE/D4D/config/catalyst.pem'
+                        password: decryptedCredentials.password
                     };
-
                     var sshParamObj = {
                         host: options.host,
                         port: options.port,
@@ -60,44 +58,40 @@ var Docker = function() {
                     }
                     var sshConnection = new SSH(sshParamObj);
                     sshConnection.exec(cmd, function(err, code) {
-                        if (decrptedCredentials.pemFileLocation) {
-                            fileIo.removeFile(decrptedCredentials.pemFileLocation, function() {
+                        if (decryptedCredentials.pemFileLocation) {
+                            fileIo.removeFile(decryptedCredentials.pemFileLocation, function() {
                                 logger.debug('temp file deleted');
                             });
-
                         }
                         callback(err, code);
                     }, callbackOnStdOut, callbackOnStdErr);
-
                 });
-
             }
         });
     }
 
-    this.checkDockerStatus = function(instanceid, callback, callbackOnStdOut, callbackOnStdErr) {
+    this.checkDockerStatus = function(resourceId, callback, callbackOnStdOut, callbackOnStdErr) {
         logger.debug(instanceid);
         var cmd = "sudo docker ps";
-
-        instancesDao.getInstanceById(instanceid, function(err, data) {
+        resourceModel.getResourceById(resourceId, function(err, data) {
             if (err) {
-                res.send(500);
+                callback(err,null);
                 return;
             }
             if (data.length) {
                 logger.debug('reached docker cmd');
-                var instanceoptions = data[0];
-                credentialCrpto.decryptCredential(instanceoptions.credentials, function(err, decrptedCredentials) {
+                var instanceOptions = data[0];
+                credentialCrp.decryptCredential(instanceOptions.credentials, function(err, decryptedCredentials) {
                     if (err) {
                         callback(err);
                         return;
                     }
                     var options = {
-                        host: instanceoptions.instanceIP,
+                        host: instanceOptions.resourceDetails.publicIp,
                         port: '22',
-                        username: decrptedCredentials.username, //'ec2-user',
-                        privateKey: decrptedCredentials.pemFileLocation, //'/development/catalyst/D4DFE/D4D/config/catalyst.pem'
-                        password: decrptedCredentials.password
+                        username: decryptedCredentials.username,
+                        privateKey: decryptedCredentials.pemFileLocation,
+                        password: decryptedCredentials.password
                     };
 
                     var sshParamObj = {
@@ -115,19 +109,14 @@ var Docker = function() {
                     }
                     var sshConnection = new SSH(sshParamObj);
                     sshConnection.exec(cmd, function(err, code) {
-                        if (decrptedCredentials.pemFileLocation) {
-                            fileIo.removeFile(decrptedCredentials.pemFileLocation, function() {
+                        if (decryptedCredentials.pemFileLocation) {
+                            fileIo.removeFile(decryptedCredentials.pemFileLocation, function() {
                                 logger.debug('temp file deleted');
                             });
-
                         }
-
                         callback(err, code);
-
                     }, callbackOnStdOut, callbackOnStdErr);
-
                 });
-
             }
         });
     }

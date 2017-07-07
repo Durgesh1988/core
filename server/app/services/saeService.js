@@ -105,8 +105,6 @@ function saeAnalysis(service,callback) {
                         }
                     });
                     function awsGroupResources(groupKey, query, callback) {
-                        console.log(JSON.stringify(groupKey));
-                        console.log(JSON.stringify(query));
                         resourceModel.getResources(query, function (err, resource) {
                             if (err) {
                                 logger.error("Error in fetching Resources for Query:", query, err);
@@ -375,6 +373,24 @@ function serviceMapVersion(service,resources,instanceStateList){
                 var count = 0;
                 resources.forEach(function(node){
                     if(node.result.category !== 'managed' && node.result.resourceDetails.state !== 'terminated') {
+                        var queryObj = {
+                            'masterDetails.orgId': service.masterDetails.orgId,
+                            'masterDetails.orgName': service.masterDetails.orgName,
+                            'masterDetails.bgId': service.masterDetails.bgId,
+                            'masterDetails.bgName': service.masterDetails.bgName,
+                            'masterDetails.projectId': service.masterDetails.projectId,
+                            'masterDetails.projectName': service.masterDetails.projectName,
+                            'masterDetails.envId': service.masterDetails.envId,
+                            'masterDetails.envName': service.masterDetails.envName,
+                            'configDetails.id': service.masterDetails.configId,
+                            'configDetails.name': service.masterDetails.configName,
+                            'monitor': service.masterDetails.monitor?service.masterDetails.monitor:null
+                        }
+                        resourceModel.updateResourceById(node.result._id, queryObj, function (err, data) {
+                            if (err) {
+                                logger.error("Error in updating Resource : " + err)
+                            }
+                        });
                         instanceStateList.push('authentication_error');
                         var resourceObj = {
                             id: node.result._id + '',

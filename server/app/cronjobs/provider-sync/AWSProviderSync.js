@@ -7,13 +7,10 @@ var async = require('async');
 var resourceService = require('_pr/services/resourceService');
 var resourceModel = require('_pr/model/resources/resources');
 var tagsModel = require('_pr/model/tags');
-var instancesDao = require('_pr/model/classes/instance/instance');
 var instanceService = require('_pr/services/instanceService');
 var commonService = require('_pr/services/commonService');
 var noticeService = require('_pr/services/noticeService.js');
 var saeService = require('_pr/services/saeService.js');
-var logsDao = require('_pr/model/dao/logsdao.js');
-var instanceLogModel = require('_pr/model/log-trail/instanceLog.js');
 var credentialCryptography = require('_pr/lib/credentialcryptography');
 var chefDao = require('_pr/model/dao/chefDao.js');
 var apiUtil = require('_pr/lib/utils/apiUtil.js');
@@ -91,7 +88,7 @@ function awsRDSS3ProviderSyncForProvider(provider,orgName,callback) {
         function (resources, next) {
             async.parallel({
                 ec2: function (callback) {
-                    saveEC2Data(resources.ec2,provider, callback);
+                    saveEC2Data(resources.ec2,callback);
                 },
                 s3: function (callback) {
                     saveS3Data(resources.s3, callback);
@@ -197,81 +194,69 @@ function saveS3Data(s3Info, callback) {
     }
 }
 
-function saveEC2Data(ec2Info,provider, callback) {
+function saveEC2Data(ec2Info,callback) {
     if(ec2Info.length === 0) {
         return callback(null, ec2Info);
     }else {
         var count = 0;
         for (var i = 0; i < ec2Info.length; i++) {
             (function (ec2) {
-                instancesDao.getInstancesByProviderIdOrgIdAndPlatformId(ec2.masterDetails.orgId, ec2.providerDetails.id, ec2.resourceDetails.platformId, function (err, managedInstances) {
+                var queryObj = {
+                    'masterDetails.orgId': ec2.masterDetails.orgId,
+                    'providerDetails.id': ec2.providerDetails.id,
+                    'resourceDetails.platformId': ec2.resourceDetails.platformId
+                }
+                resourceModel.getResources(queryObj, function (err, responseInstanceData) {
                     if (err) {
-                        logger.error(err);
-                    }
-                    if (managedInstances.length > 0) {
-                        instanceService.instanceSyncWithAWS(managedInstances[0]._id, ec2, provider, function (err, updateInstanceData) {
-                            if (err) {
-                                logger.error(err);
+                        logger.error("Error in getting Instance : ", ec2.resourceDetails.platformId);
+                        count++;
+                        if (count === ec2Info.length) {
+                            callback(null, ec2Info);
+                        }
+                    } else if (responseInstanceData.length > 0) {
+                        var resourceObj = {};
+                        if (ec2.resourceDetails.state === 'shutting-down' || ec2.resourceDetails.state === 'terminated') {
+                            resourceObj = {
+                                'resourceDetails.state': ec2.resourceDetails.state,
+                                'isDeleted': true
                             }
-                        });
-                    }
-                    var queryObj = {
-                        'masterDetails.orgId': ec2.masterDetails.orgId,
-                        'providerDetails.id': ec2.providerDetails.id,
-                        'resourceDetails.platformId': ec2.resourceDetails.platformId
-                    }
-                    resourceModel.getResources(queryObj, function (err, responseInstanceData) {
-                        if (err) {
-                            logger.error("Error in getting Instance : ", ec2.resourceDetails.platformId);
+                        } else {
+                            resourceObj = {
+                                'tags': ec2.tags,
+                                'resourceDetails.platformId': ec2.resourceDetails.platformId,
+                                'resourceDetails.amiId': ec2.resourceDetails.amiId,
+                                'resourceDetails.publicIp': ec2.resourceDetails.publicIp,
+                                'resourceDetails.hostName': ec2.resourceDetails.hostName,
+                                'resourceDetails.privateIp': ec2.resourceDetails.privateIp,
+                                'resourceDetails.os': ec2.resourceDetails.os,
+                                'resourceDetails.vpcId': ec2.resourceDetails.vpcId,
+                                'resourceDetails.launchTime': ec2.resourceDetails.launchTime,
+                                'resourceDetails.subnetId': ec2.resourceDetails.subnetId,
+                                'resourceDetails.type': ec2.resourceDetails.type,
+                                'resourceDetails.state': ec2.resourceDetails.state
+                            }
+                        }
+                        resourceModel.updateResourceById(responseInstanceData[0]._id, resourceObj, function (err, instanceUpdatedData) {
+                            if (err) {
+                                logger.error("Error in updating Instance : ", ec2.resourceDetails.platformId);
+                            }
                             count++;
                             if (count === ec2Info.length) {
                                 callback(null, ec2Info);
                             }
-                        } else if (responseInstanceData.length > 0) {
-                            var resourceObj = {};
-                            if(ec2.resourceDetails.state ==='shutting-down' || ec2.resourceDetails.state ==='terminated'){
-                                resourceObj = {
-                                    'resourceDetails.state':ec2.resourceDetails.state,
-                                    'isDeleted': true
-                                }
-                            }else{
-                                resourceObj = {
-                                    'tags':ec2.tags,
-                                    'resourceDetails.platformId':ec2.resourceDetails.platformId,
-                                    'resourceDetails.amiId':ec2.resourceDetails.amiId,
-                                    'resourceDetails.publicIp':ec2.resourceDetails.publicIp,
-                                    'resourceDetails.hostName':ec2.resourceDetails.hostName,
-                                    'resourceDetails.privateIp':ec2.resourceDetails.privateIp,
-                                    'resourceDetails.os':ec2.resourceDetails.os,
-                                    'resourceDetails.vpcId':ec2.resourceDetails.vpcId,
-                                    'resourceDetails.launchTime':ec2.resourceDetails.launchTime,
-                                    'resourceDetails.subnetId':ec2.resourceDetails.subnetId,
-                                    'resourceDetails.type':ec2.resourceDetails.type,
-                                    'resourceDetails.state':ec2.resourceDetails.state
-                                }
+                        });
+                    } else {
+                        ec2.createdOn = new Date().getTime();
+                        resourceModel.createNew(ec2, function (err, instanceSavedData) {
+                            if (err) {
+                                logger.error("Error in creating Instance : ", ec2.resourceDetails.platformId);
                             }
-                            resourceModel.updateResourceById(responseInstanceData[0]._id, resourceObj, function (err, instanceUpdatedData) {
-                                if (err) {
-                                    logger.error("Error in updating Instance : ", ec2.resourceDetails.platformId);
-                                }
-                                count++;
-                                if (count === ec2Info.length) {
-                                    callback(null, ec2Info);
-                                }
-                            });
-                        } else {
-                            ec2.createdOn = new Date().getTime();
-                            resourceModel.createNew(ec2, function (err, instanceSavedData) {
-                                if (err) {
-                                    logger.error("Error in creating Instance : ", ec2.resourceDetails.platformId);
-                                }
-                                count++;
-                                if (count === ec2Info.length) {
-                                    callback(null, ec2Info);
-                                }
-                            });
-                        }
-                    })
+                            count++;
+                            if (count === ec2Info.length) {
+                                callback(null, ec2Info);
+                            }
+                        });
+                    }
                 })
             })(ec2Info[i]);
         }
@@ -413,135 +398,40 @@ function deleteEC2ResourceData(ec2Info,providerId, callback) {
                 ec2PlatformIdList(ec2Info, next);
             },
             function (platformIds, next) {
-                async.parallel({
-                    managed: function (callback) {
-                        instancesDao.getInstanceByProviderId(providerId, function (err, instances) {
-                            if (err) {
-                                callback(err, null);
-                            } else if (instances.length > 0) {
-                                var instanceCount = 0;
-                                for (var j = 0; j < instances.length; j++) {
-                                    (function (instance) {
-                                        if (platformIds.indexOf(instance.platformId) !== -1) {
-                                            instanceCount++;
-                                            if (instanceCount === instances.length) {
-                                                callback(null, instances);
-                                                return;
-                                            }
-                                        } else {
-                                            instancesDao.removeTerminatedInstanceById(instance._id, function (err, data) {
-                                                if (err) {
-                                                    instanceCount++;
-                                                    logger.error(err);
-                                                    if (instanceCount === instances.length) {
-                                                        callback(null, instances);
-                                                        return;
-                                                    }
-                                                } else {
-                                                    instanceCount++;
-                                                    var timestampStarted = new Date().getTime();
-                                                    var user = instance.catUser ? instance.catUser : 'superadmin';
-                                                    var actionLog = instancesDao.insertInstanceStatusActionLog(instance._id, user, 'terminated', timestampStarted);
-                                                    logsDao.insertLog({
-                                                        instanceId: instance._id,
-                                                        instanceRefId: actionLog._id,
-                                                        err: false,
-                                                        log: "Instance : terminated",
-                                                        timestamp: timestampStarted
-                                                    });
-                                                    var instanceLog = {
-                                                        actionId: actionLog._id,
-                                                        instanceId: instance._id,
-                                                        orgName: instance.orgName,
-                                                        bgName: instance.bgName,
-                                                        projectName: instance.projectName,
-                                                        envName: instance.environmentName,
-                                                        status: 'terminated',
-                                                        actionStatus: "success",
-                                                        platformId: instance.platformId,
-                                                        blueprintName: instance.blueprintData.blueprintName,
-                                                        data: instance.runlist,
-                                                        platform: instance.hardware.platform,
-                                                        os: instance.hardware.os,
-                                                        size: instance.instanceType,
-                                                        user: user,
-                                                        createdOn: new Date().getTime(),
-                                                        startedOn: new Date().getTime(),
-                                                        providerType: instance.providerType,
-                                                        action: 'Terminated',
-                                                        logs: []
-                                                    };
-                                                    instanceLogModel.createOrUpdate(actionLog._id, instance._id, instanceLog, function (err, logData) {
-                                                        if (err) {
-                                                            logger.error("Failed to create or update instanceLog: ", err);
-                                                        }
-                                                    });
-                                                    noticeService.notice("system", {
-                                                        title: "AWS Instance : terminated",
-                                                        body: "AWS Instance " + instance.platformId + " is Terminated."
-                                                    }, "success", function (err, data) {
-                                                        if (err) {
-                                                            logger.error("Error in Notification Service, ", err);
-                                                        }
-                                                    });
-                                                    if (instanceCount === instances.length) {
-                                                        callback(null, instances);
-                                                        return;
-                                                    }
-                                                }
-                                            })
-                                        }
-
-                                    })(instances[j]);
-                                }
-                            } else {
-                                return callback(null, instances);
-                            }
-                        });
-                    },
-                    resources: function (callback) {
-                        var queryObj = {
-                            'providerDetails.id':providerId,
-                            'resourceType': 'EC2'
-                        };
-                        resourceModel.getResources(queryObj, function (err, ec2data) {
-                            if (err) {
-                                return callback(err, null);
-                            } else if (ec2data.length > 0) {
-                                var count = 0;
-                                for (var i = 0; i < ec2data.length; i++) {
-                                    (function (ec2) {
-                                        if (platformIds.indexOf(ec2.resourceDetails.platformId) === -1) {
-                                            resourceModel.deleteResourcesById(ec2._id, function (err, data) {
-                                                if (err) {
-                                                    logger.error("Error in deleting EC2 Instance :", ec2.resourceDetails.platformId)
-                                                }
-                                                count++;
-                                                if (count === ec2data.length) {
-                                                    return callback(null, ec2data);
-                                                }
-                                            })
-                                        } else {
-                                            count++;
-                                            if (count === ec2data.length) {
-                                                return callback(null, []);
-                                            }
-                                        }
-                                    })(ec2data[i]);
-                                }
-                            } else {
-                                return callback(null, platformIds);
-                            }
-                        });
-                    }
-                }, function (err, results) {
+                var queryObj = {
+                    'providerDetails.id': providerId,
+                    'resourceType': 'EC2'
+                };
+                resourceModel.getResources(queryObj, function (err, ec2data) {
                     if (err) {
-                        next(err, null);
+                        return next(err, null);
+                    } else if (ec2data.length > 0) {
+                        var count = 0;
+                        for (var i = 0; i < ec2data.length; i++) {
+                            (function (ec2) {
+                                if (platformIds.indexOf(ec2.resourceDetails.platformId) === -1) {
+                                    resourceModel.deleteResourcesById(ec2._id, function (err, data) {
+                                        if (err) {
+                                            logger.error("Error in deleting EC2 Instance :", ec2.resourceDetails.platformId)
+                                        }
+                                        count++;
+                                        if (count === ec2data.length) {
+                                            return next(null, ec2data);
+                                        }
+                                    })
+                                } else {
+                                    count++;
+                                    if (count === ec2data.length) {
+                                        return next(null, []);
+                                    }
+                                }
+                            })(ec2data[i]);
+                        }
                     } else {
-                        next(null, results);
+                        return next(null, platformIds);
                     }
-                })
-            }], function (err, results) {
+                });
+        }], function (err, results) {
             if (err) {
                 return callback(err, null);
             } else {
@@ -858,35 +748,11 @@ function saeSync(callback){
     logger.debug("SAE Sync is stared");
     async.waterfall([
         function(next){
-            instancesDao.getAllNonTerminatedInstances({isDeleted:false},next);
+            resourceModel.getResources({isDeleted:false,category:'managed'},next);
         },
         function(instances,next){
             if(instances.length > 0){
-                async.parallel({
-                    instanceSync:function(callback){
-                        instanceSync(instances,callback);
-                    },
-                    resourceSync:function(callback){
-                        var count = 0;
-                        instances.forEach(function(instance){
-                            createOrUpdateResource(instance,function(err,data){
-                                if(err){
-                                    logger.error("Error in create or Update resources:",err);
-                                }
-                                count++;
-                                if(count === instances.length){
-                                    callback(null,instances);
-                                }
-                            })
-                        })
-                    }
-                },function(err,results){
-                    if(err){
-                        next(err,null);
-                    }else{
-                        next(null,results);
-                    }
-                })
+                instanceSync(instances,next);
             }else{
                 logger.debug("There is no instance present in DB without terminated state");
                 next(null,instances);
@@ -904,132 +770,19 @@ function saeSync(callback){
     })
 }
 
-function createOrUpdateResource(instance,callback){
-    if(instance.source === 'service'){
-        return callback(null,null);
-    }else if(instance.source === 'cloud'){
-        return callback(null,null);
-    }else if(instance.source === 'blueprint' && instance.providerType && instance.providerType !== 'aws'){
-        return callback(null,null);
-    }else {
-        var resourceObj = {
-            name: instance.name,
-            category: 'managed',
-            masterDetails: {
-                orgId: instance.orgId,
-                orgName: instance.orgName,
-                bgId: instance.bgId,
-                bgName: instance.bgName,
-                projectId: instance.projectId,
-                projectName: instance.projectName,
-                envId: instance.envId,
-                envName: instance.environmentName
-            },
-            resourceDetails: {
-                platformId: instance.platformId,
-                vpcId: instance.vpcId ? instance.vpcId : null,
-                subnetId: instance.subnetId ? instance.subnetId : null,
-                hostName: instance.hostName ? instance.hostName : null,
-                publicIp: instance.instanceIP,
-                privateIp: instance.privateIpAddress,
-                state: instance.instanceState,
-                bootStrapState: instance.bootStrapStatus === 'waiting' || instance.bootStrapStatus === 'pending'?'bootStrapping':instance.bootStrapStatus,
-                credentials: instance.credentials,
-                route53HostedParams: instance.route53HostedParams,
-                hardware: instance.hardware,
-                dockerEngineState: instance.docker.dockerEngineStatus
-            },
-            configDetails: {
-                id: instance.chef.serverId,
-                nodeName: instance.chef.chefNodeName,
-                run_list: instance.runlist,
-                attributes: instance.attributes
-            },
-            blueprintDetails: {
-                id: instance.blueprintData.blueprintId ? instance.blueprintData.blueprintId : null,
-                name: instance.blueprintData.blueprintName ? instance.blueprintData.blueprintName : null,
-                templateName: instance.blueprintData.templateId ? instance.blueprintData.templateId : null,
-                templateType: instance.blueprintData.templateType ? instance.blueprintData.templateType : null
-            },
-            user: instance.catUser,
-            isScheduled: instance.isScheduled,
-            cronJobIds: instance.cronJobIds,
-            startScheduler: instance.instanceStartScheduler,
-            stopScheduler: instance.instanceStopScheduler,
-            authentication:'success',
-            interval: instance.interval,
-            stackName: instance.domainName && instance.domainName !== null ? instance.domainName : instance.stackName,
-            tagServer: instance.tagServer,
-            monitor: instance.monitor,
-            isDeleted: instance.isDeleted
-        }
-        if (instance.schedulerStartOn) {
-            resourceObj.schedulerStartOn = instance.schedulerStartOn;
-        }
-        if (instance.schedulerStopOn) {
-            resourceObj.schedulerStopOn = instance.schedulerStopOn;
-        }
-        if (instance.providerType && instance.providerType !== null) {
-            resourceObj.providerDetails = {
-                id: instance.providerId,
-                type: instance.providerType,
-                region: {
-                    region: instance.region && instance.region !== null ? instance.region : instance.providerData.region
-                },
-                keyPairId: instance.keyPairId
-            };
-            resourceObj.cost = instance.cost;
-            resourceObj.usage = instance.usage;
-            resourceObj.tags = instance.tags;
-            resourceObj.resourceType = 'EC2'
-        } else {
-            resourceObj.resourceType = 'Instance'
-        }
-        var filterBy = {
-            'resourceDetails.platformId': instance.platformId,
-            'isDeleted':false
-        }
-        resourceModel.getResources(filterBy, function (err, data) {
-            if (err) {
-                logger.error("Error in fetching Resources>>>>:", err);
-                return callback(err, null);
-            } else if (data.length > 0) {
-                resourceModel.updateResourceById(data[0]._id, resourceObj, function (err, data) {
-                    if (err) {
-                        logger.error("Error in updating Resources>>>>:", err);
-                        return callback(err, null);
-                    } else {
-                        return callback(null, data);
-                    }
-                })
-            } else {
-                resourceObj.createdOn = new Date().getTime();
-                resourceModel.createNew(resourceObj, function (err, data) {
-                    if (err) {
-                        logger.error("Error in creating Resources>>>>:", err);
-                        return callback(err, null);
-                    } else {
-                        return callback(null, data);
-                    }
-                })
-            }
-        })
-    }
-}
-
 function instanceSync(instances,callback){
     var count = 0,credentials = {};
     instances.forEach(function(instance){
-        if(instance.providerId && instance.providerId !== null){
+        if(instance.providerDetails && instance.providerDetails.id !== null){
             count++;
             if(count === instances.length){
                 return callback(null,instances);
             }
         }else{
             var nodeDetails = {
-                nodeIp: instance.instanceIP,
-                nodeOs: instance.hardware.os,
-                nodeName: instance.platformId
+                nodeIp: instance.resourceDetails.publicIp,
+                nodeOs: instance.resourceDetails.hardware.os,
+                nodeName: instance.resourceDetails.platformId
             }
             instance.credentials['source'] = 'executor';
             credentialCryptography.decryptCredential(instance.credentials, function (err, decryptedCredentials) {
@@ -1055,65 +808,14 @@ function instanceSync(instances,callback){
                             callback(null,instances);
                         }
                     }else{
-                        instancesDao.removeTerminatedInstanceById(instance._id, function (err, data) {
+                        resourceModel.deleteResourcesById(instance._id, function (err, data) {
                             if (err) {
-                                count++;
                                 logger.error(err);
-                                if (count === instances.length) {
-                                    callback(null, instances);
-                                    return;
-                                }
-                            } else {
-                                count++;
-                                var timestampStarted = new Date().getTime();
-                                var user = instance.catUser ? instance.catUser : 'superadmin';
-                                var actionLog = instancesDao.insertInstanceStatusActionLog(instance._id, user, 'terminated', timestampStarted);
-                                logsDao.insertLog({
-                                    instanceId: instance._id,
-                                    instanceRefId: actionLog._id,
-                                    err: false,
-                                    log: "Instance : terminated",
-                                    timestamp: timestampStarted
-                                });
-                                var instanceLog = {
-                                    actionId: actionLog._id,
-                                    instanceId: instance._id,
-                                    orgName: instance.orgName,
-                                    bgName: instance.bgName,
-                                    projectName: instance.projectName,
-                                    envName: instance.environmentName,
-                                    status: 'terminated',
-                                    actionStatus: "success",
-                                    platformId: instance.platformId,
-                                    blueprintName: instance.blueprintData.blueprintName,
-                                    data: instance.runlist,
-                                    platform: instance.hardware.platform,
-                                    os: instance.hardware.os,
-                                    size: instance.instanceType,
-                                    user: user,
-                                    createdOn: new Date().getTime(),
-                                    startedOn: new Date().getTime(),
-                                    providerType: instance.providerType,
-                                    action: 'Terminated',
-                                    logs: []
-                                };
-                                instanceLogModel.createOrUpdate(actionLog._id, instance._id, instanceLog, function (err, logData) {
-                                    if (err) {
-                                        logger.error("Failed to create or update instanceLog: ", err);
-                                    }
-                                });
-                                noticeService.notice("system", {
-                                    title: "Instance : terminated",
-                                    body: "Instance " + instance.platformId + " is Terminated."
-                                }, "success", function (err, data) {
-                                    if (err) {
-                                        logger.error("Error in Notification Service, ", err);
-                                    }
-                                });
-                                if (count === instances.length) {
-                                    callback(null, instances);
-                                    return;
-                                }
+                            }
+                            count++;
+                            if (count === instances.length) {
+                                callback(null, instances);
+                                return;
                             }
                         })
                     }
