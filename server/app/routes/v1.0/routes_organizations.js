@@ -58,6 +58,7 @@ var botOldService = require('_pr/services/botOldService.js');
 var organizationService = require('_pr/services/organizationService.js');
 var resourceModel = require('_pr/model/resources/resources');
 var commonService = require('_pr/services/commonService.js');
+var auditTrailService = require('_pr/services/auditTrailService.js');
 
 
 module.exports.setRoutes = function (app, sessionVerification) {
@@ -1188,6 +1189,7 @@ module.exports.setRoutes = function (app, sessionVerification) {
                                     if (appConfig.appUrls && appConfig.appUrls.length) {
                                         appUrls = appUrls.concat(appConfig.appUrls);
                                     }
+                                    var actionId = uuid.v4();
                                     var resourceObj = {
                                         name: req.body.fqdn,
                                         category: 'managed',
@@ -1236,48 +1238,104 @@ module.exports.setRoutes = function (app, sessionVerification) {
                                         description: 'Importing a Node using IP',
                                         category:  'Bootstrapping instance',
                                         executionType: 'Run',
-                                        manualExecutionTime: 10
+                                        manualExecutionTime: 10,
+                                        actionLogId:actionId
                                     };
-                                    auditTrailService.insertAuditTrail(resourceObj, auditTrailObj, actionObj, next);
-                                    var actionId = uuid.v4();
                                     if(instances.length){
                                         resourceModel.updateResourceById(instances[0]._id,resourceObj, function (err, resource){
                                             if (err) {
                                                 logger.error("Error in updating Resources>>>>:", err);
+                                                res.send(500);
                                             }
-                                            var resourceDetails = {
-                                                id: instances[0]._id,
-                                                actionId: actionId,
-                                                botId: null,
-                                                botRefId:null
-                                            }
-                                            commonService.bootStrappingResource(resourceDetails,function(err,data){
-                                                if(err){
-
-                                                }else{
-
+                                            auditTrailService.insertAuditTrail(resourceObj, auditTrailObj, actionObj, function(err,auditTrails) {
+                                                if (err) {
+                                                    logger.error(err);
+                                                    res.send(500);
                                                 }
-                                            })
+                                                var resourceDetails = {
+                                                    id: instances[0]._id,
+                                                    actionId: actionId,
+                                                    botId: null,
+                                                    botRefId: null
+                                                }
+                                                res.send(200,{instanceId:resource._id,actionId:actionId});
+                                                commonService.bootStrappingResource(resourceDetails, function (err, data) {
+                                                    if (err) {
+                                                        var resultTaskExecution = {
+                                                            actionStatus: "failed",
+                                                            status: "failed",
+                                                            endedOn: new Date().getTime(),
+                                                            actionLogId: actionId
+                                                        }
+                                                        auditTrailService.updateAuditTrail('Instances', auditTrails._id, resultTaskExecution, function (err, auditTrail) {
+                                                            if (err) {
+                                                                logger.error("Failed to create or update bots Log: ", err);
+                                                            }
+                                                        });
+                                                        res.send(500);
+                                                    } else {
+                                                        var resultTaskExecution = {
+                                                            actionStatus: "success",
+                                                            status: "success",
+                                                            endedOn: new Date().getTime(),
+                                                            actionLogId: actionId
+                                                        }
+                                                        auditTrailService.updateAuditTrail('Instances', auditTrails._id, resultTaskExecution, function (err, auditTrail) {
+                                                            if (err) {
+                                                                logger.error("Failed to create or update bots Log: ", err);
+                                                            }
+                                                        });
+                                                    }
+                                                })
+                                            });
                                         })
                                     }else{
                                         resourceModel.createNew(resourceObj, function (err, resource){
                                             if (err) {
                                                 logger.error("Error in creating Resources>>>>:", err);
+                                                res.send(500);
                                                 return;
                                             }else {
-                                                var resourceDetails = {
-                                                    id: resource._id,
-                                                    actionId: actionId,
-                                                    botId: null,
-                                                    botRefId:null
-                                                }
-                                                commonService.bootStrappingResource(resourceDetails, function (err, data) {
+                                                auditTrailService.insertAuditTrail(resourceObj, auditTrailObj, actionObj, function(err,auditTrails) {
                                                     if (err) {
-
-                                                    } else {
-
+                                                        logger.error(err);
+                                                        res.send(500);
                                                     }
-                                                })
+                                                    var resourceDetails = {
+                                                        id: resource._id,
+                                                        actionId: actionId,
+                                                        botId: null,
+                                                        botRefId: null
+                                                    }
+                                                    res.send(200,{instanceId:resource._id,actionId:actionId});
+                                                    commonService.bootStrappingResource(resourceDetails, function (err, data) {
+                                                        if (err) {
+                                                            var resultTaskExecution = {
+                                                                actionStatus: "failed",
+                                                                status: "failed",
+                                                                endedOn: new Date().getTime(),
+                                                                actionLogId: actionId
+                                                            }
+                                                            auditTrailService.updateAuditTrail('Instances', auditTrails._id, resultTaskExecution, function (err, auditTrail) {
+                                                                if (err) {
+                                                                    logger.error("Failed to create or update bots Log: ", err);
+                                                                }
+                                                            });
+                                                        } else {
+                                                            var resultTaskExecution = {
+                                                                actionStatus: "success",
+                                                                status: "success",
+                                                                endedOn: new Date().getTime(),
+                                                                actionLogId: actionId
+                                                            }
+                                                            auditTrailService.updateAuditTrail('Instances', auditTrails._id, resultTaskExecution, function (err, auditTrail) {
+                                                                if (err) {
+                                                                    logger.error("Failed to create or update bots Log: ", err);
+                                                                }
+                                                            });
+                                                        }
+                                                    })
+                                                });
                                             }
                                         })
                                     }

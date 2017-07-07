@@ -41,21 +41,21 @@ auditTrailService.insertAuditTrail = function insertAuditTrail(auditDetails,audi
         auditType: actionObj.auditType,
         actionLogId:auditTrailConfig.actionLogId?auditTrailConfig.actionLogId:null,
         masterDetails:{
-            orgId: auditDetails.orgId,
-            orgName: auditDetails.orgName,
-            bgId: auditDetails.bgId,
-            bgName: auditDetails.bgName,
-            projectId: auditDetails.projectId,
-            projectName: auditDetails.projectName,
-            envId: auditDetails.envId,
-            envName: auditDetails.envName?auditDetails.envName:auditDetails.environmentName
+            orgId: auditDetails.orgId?auditDetails.orgId:auditDetails.masterDetails.orgId,
+            orgName: auditDetails.orgName?auditDetails.orgName:auditDetails.masterDetails.orgName,
+            bgId: auditDetails.bgId?auditDetails.bgId:auditDetails.masterDetails.bgId,
+            bgName: auditDetails.bgName?auditDetails.bgName:auditDetails.masterDetails.bgName,
+            projectId: auditDetails.projectId?auditDetails.projectId:auditDetails.masterDetails.projectId,
+            projectName: auditDetails.projectName?auditDetails.projectName:auditDetails.masterDetails.projectName,
+            envId: auditDetails.envId?auditDetails.envId:auditDetails.masterDetails.envId,
+            envName: auditDetails.envName?auditDetails.envName:auditDetails.environmentName?auditDetails.environmentName:auditDetails.masterDetails.envName
         },
         status: actionObj.status,
         auditCategory:actionObj.auditCategory,
         actionStatus: actionObj.actionStatus,
         user: actionObj.catUser,
         startedOn: new Date().getTime(),
-        providerType: auditDetails.providerType,
+        providerType: auditDetails.providerType?auditDetails.providerType:auditDetails.providerDetails.type,
         action: actionObj.action
     };
     if(actionObj.auditType === 'BOTOLD' || actionObj.auditType === 'BOT'){

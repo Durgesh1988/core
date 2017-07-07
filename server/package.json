@@ -13,6 +13,7 @@
     "alasql": "^0.3.7",
     "async": "v1.5.2",
     "aws-sdk": "2.3.16",
+    "aws4": "^1.6.0",
     "bcryptjs": "2.2.0",
     "bluebird": "^3.5.0",
     "body-parser": "1.14.1",

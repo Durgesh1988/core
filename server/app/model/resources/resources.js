@@ -246,7 +246,11 @@ var ResourceSchema = new Schema({
     },
     serverDeletedCheck: {
         type: Boolean
-    }
+    },
+    appUrls: [{
+        name: String,
+        url: String
+    }]
 });
 
 ResourceSchema.plugin(mongoosePaginate);
