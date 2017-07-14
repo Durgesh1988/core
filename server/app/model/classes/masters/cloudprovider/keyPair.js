@@ -53,6 +53,11 @@ var awsKeyPairSchema = new Schema({
         type: String,
         required: true,
         trim: true
+    },
+    fileId: {
+        type: String,
+        required: false,
+        trim: true
     }
 });
 
@@ -112,12 +117,26 @@ awsKeyPairSchema.statics.createNew = function(req, providerId, callback) {
                         
                     }else if(aKeyPair.length > 0){
                             count++;
-                            ProviderUtil.saveAwsPemFiles(aKeyPair[0]._id, files[count1], function(err, flag) {
+                            ProviderUtil.saveAwsPemFiles(aKeyPair[0]._id, files[count1], function(err, fileDetails) {
                                 if (err) {
                                     logger.debug("Unable to save pem files.");
                                     return;
                                 }
+                                AWSKeyPair.update({
+                                    "_id": new ObjectId(aKeyPair._id)
+                                }, {
+                                    $set: {
+                                        fileId: fileDetails.fileId
+                                    }
+                                }, {
+                                    upsert: false
+                                }, function(err, updateCount) {
+                                    if (err) {
+                                        logger.debug("Exit updateAWSKeyPairById with error");
+                                    }
+                                });
                             });
+
                             if (keyPairs.length === count) {
                                 logger.debug("Exit createNew with keyPair present");
                                 callback(null, returnKeyPair);
@@ -132,11 +151,24 @@ awsKeyPairSchema.statics.createNew = function(req, providerId, callback) {
                             }
                             returnKeyPair.push(keyPair);
                             count++;
-                            ProviderUtil.saveAwsPemFiles(aKeyPair._id, files[count1], function(err, flag) {
+                            ProviderUtil.saveAwsPemFiles(aKeyPair._id, files[count1], function(err, fileDetails) {
                                 if (err) {
                                     logger.debug("Unable to save pem files.");
                                     return;
                                 }
+                                AWSKeyPair.update({
+                                    "_id": new ObjectId(aKeyPair._id)
+                                }, {
+                                    $set: {
+                                        fileId: fileDetails.fileId
+                                    }
+                                }, {
+                                    upsert: false
+                                }, function(err, updateCount) {
+                                    if (err) {
+                                        logger.debug("Exit updateAWSKeyPairById with error");
+                                    }
+                                });
                             });
                             if (keyPairs.length === count) {
                                 logger.debug("Exit createNew with keyPair present");

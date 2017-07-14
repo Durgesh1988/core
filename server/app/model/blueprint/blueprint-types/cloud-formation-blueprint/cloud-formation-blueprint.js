@@ -303,7 +303,6 @@ CloudFormationBlueprintSchema.methods.launch = function (launchParams, callback)
                                                         }
                                                         if (keyPairs && keyPairs.length) {
                                                             var keyPair = keyPairs[0];
-                                                            var encryptedPemFileLocation = appConfig.instancePemFilesDir + keyPair._id;
                                                             if (!launchParams.appUrls) {
                                                                 launchParams.appUrls = [];
                                                             }
@@ -383,11 +382,11 @@ CloudFormationBlueprintSchema.methods.launch = function (launchParams, callback)
                                                                     privateIp: instanceData.PrivateIpAddress || null,
                                                                     type: instanceData.InstanceType,
                                                                     launchTime: Date.parse(instanceData.LaunchTime),
+                                                                    credentials: {
+                                                                        username: instanceUsername,
+                                                                        fileId: keyPair.fileId
+                                                                    },
                                                                     bootStrapState:'bootStrapping'
-                                                                },
-                                                                credentials: {
-                                                                    username: instanceUsername,
-                                                                    pemFileLocation: encryptedPemFileLocation
                                                                 },
                                                                 configDetails: {
                                                                     id: self.infraManagerId,

@@ -75,28 +75,28 @@
 	}]).service('instanceActions', [function() {
 		//condition check for SSH
 		var isSSHSupportedOS = function(inst) {
-			if ((inst.hardware.os === 'linux' || inst.hardware.os === 'centos')) {
+			if ((inst.resourceDetails.hardware.os === 'linux' || inst.resourceDetails.hardware.os === 'centos')) {
 				return true;
 			}
 		},
 		isRunning = function(inst) {
-			return inst.instanceState === 'running';
+			return inst.resourceDetails.state === 'running';
 		};
 		//condition check for RDP
 		var isRDPSupportOS = function(inst) {
-			if ((inst.hardware.os === 'windows')) {
+			if ((inst.resourceDetails.hardware.os === 'windows')) {
 				return true;
 			}
 		};
 		//condition check for chef
 		var isChefSupported = function(inst) {
-			if ((inst.chef)) {
+			if ((inst.configDetails.type ==='chef')) {
 				return true;
 			}
 		};
 		//condition check for puppet
 		var isPuppetSupported = function(inst) {
-			if ((inst.puppet)) {
+			if ((inst.configDetails.type ==='puppet')) {
 				return true;
 			}
 		};

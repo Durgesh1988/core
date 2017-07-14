@@ -283,23 +283,23 @@ function executeScriptOnRemote(instance,botDetail,requestBody,actionLogId,auditT
             host: instance.instanceIP,
             port: 22
         }
-        if (decryptedCredentials.pemFileLocation) {
+        if (decryptedCredentials.base64FileData) {
             sshOptions.privateKey = decryptedCredentials.pemFileLocation;
             authenticationObj.id = "Pem_Based_Authentication";
             authenticationObj.authType = "pem";
             authenticationObj.auth = {
                 "username": decryptedCredentials.username,
-                "pemFileLocation": decryptedCredentials.pemFileLocation
+                "fileData": decryptedCredentials.base64FileData
             }
             envObj.hostname = instance.instanceIP;
             envObj.authReference = "Pem_Based_Authentication";
-        } else if (decryptedCredentials.fileData) {
-            sshOptions.privateKey = decryptedCredentials.fileData;
+        } else if (decryptedCredentials.pemFileData) {
+            sshOptions.privateKey = decryptedCredentials.pemFileData;
             authenticationObj.id = "Pem_Based_Authentication";
             authenticationObj.authType = "pem";
             authenticationObj.auth = {
                 "username": decryptedCredentials.username,
-                "fileData": decryptedCredentials.fileData
+                "pemFileData": decryptedCredentials.pemFileData
             }
             envObj.hostname = instance.instanceIP;
             envObj.authReference = "Pem_Based_Authentication";

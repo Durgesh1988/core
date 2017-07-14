@@ -76,6 +76,10 @@
 					reqBody.os = $scope.os;
 					reqBody.configManagmentId = $scope.selectedConfig;
 					reqBody.monitorId = $scope.monitorId;
+					reqBody.orgId=workzoneEnvironment.getEnvParams().org;
+                    reqBody.bgId=workzoneEnvironment.getEnvParams().bg;
+                    reqBody.projectId=workzoneEnvironment.getEnvParams().proj;
+                    reqBody.envId=workzoneEnvironment.getEnvParams().env;
 					if($scope.tagServerCheck) {
 						reqBody.tagServer = $scope.tagSerSelected;
 					}
@@ -97,7 +101,7 @@
 					$scope.isSubmitLoading = true;
 					//post method for import by ip
 					$scope.postMethodImportByIp = function(){
-						workzoneServices.postImportByIP(workzoneEnvironment.getEnvParams(),reqBody)
+						workzoneServices.postImportByIP(reqBody)
 						.then(function(response) {
 							if(response.data){
 								$modalInstance.close(response.data);

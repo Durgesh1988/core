@@ -21,31 +21,24 @@ var logger = require('_pr/logger')(module);
 var currentDirectory = __dirname;
 var fs = require('fs');
 var path = require('path');
-var appConfig = require('_pr/config');
-var Cryptography = require('_pr/lib/utils/cryptography');
-
+var credentialCryptography = require('_pr/lib/credentialcryptography');
 // saveAwsPemFiles() capture all uploaded files from request and save.
 var ProviderUtil = function() {
     this.saveAwsPemFiles = function(keyPairId, inFiles, callback) {
-        logger.debug("Path: ", inFiles);
-        var settings = appConfig;
-        //encrypting default pem file
-        var cryptoConfig = appConfig.cryptoSettings;
-        var cryptography = new Cryptography(cryptoConfig.algorithm, cryptoConfig.password);
-        var encryptedPemFileLocation = settings.instancePemFilesDir + keyPairId;
-        fs.readFile(inFiles.path, function(err, data) {
+        logger.debug("Path Durgesh: ", inFiles);
+        fs.readFile(inFiles.path, {encoding: 'ascii'}, function(err, data) {
             if (err) {
                 logger.debug("File not found in specified path.");
                 callback(err, null);
             }
-            cryptography.encryptFile(inFiles.path, cryptoConfig.encryptionEncoding, encryptedPemFileLocation, cryptoConfig.decryptionEncoding, function(err) {
+            credentialCryptography.encryptCredential({pemFileData:data}, function(err,credentials) {
                 if (err) {
                     logger.log("encryptFile Failed >> ", err);
                     callback(err, null);
                     return;
                 }
                 logger.debug("Encryted Pemfile saved...");
-                callback(null, true);
+                callback(null, credentials);
             });
         });
     }

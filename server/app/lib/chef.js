@@ -413,25 +413,8 @@ var Chef = function(settings) {
                 callbackOnStdOut(data);
             }
         }
-
         if (typeof callbackOnStdErr === 'function') {
-
             options.onStdErr = function(data) {
-                /*if ( bootstrapattemptcount < 4) {
-                    //retrying bootstrap .... needed for windows
-                    if (data.toString().indexOf('No response received from remote node after') >= 0 || data.toString().indexOf('ConnectTimeoutError:') >= 0) {
-                        callbackOnStdOut(data.toString() + '.Retrying. Attempt ' + (bootstrapattemptcount + 1) + '/4 ...');
-                        that.bootstrapInstance(params, callback, callbackOnStdOut, callbackOnStdErr);
-                        bootstrapattemptcount++;
-                    } else {
-                        logger.debug('Hit an error :' + data);
-                        callbackOnStdErr(data);
-                    }
-                } else {
-                    logger.debug('Hit an error :' + data);
-                    callbackOnStdErr(data);
-                }
-                return;*/
                 callbackOnStdErr(data);
             }
         }
@@ -439,7 +422,6 @@ var Chef = function(settings) {
             params.runlist = [];
 
         }
-
         //fixing template runlist
         params.runlist = fixTemplateRunlist(params.runlist);
 
@@ -451,7 +433,6 @@ var Chef = function(settings) {
             argList.push('winrm');
         }
         argList.push(params.instanceIp);
-
         var runlist = chefDefaults.defaultChefCookbooks.concat(params.runlist);
         if (params.instanceOS == 'windows') {
             if (chefDefaults.defaultChefCookbooksWindows) {
@@ -462,7 +443,6 @@ var Chef = function(settings) {
                 runlist = chefDefaults.defaultChefCookbooksLinux.concat(runlist);
             }
         }
-
         var credentialArg;
         if (params.pemFilePath && (params.instanceOS != 'windows')) {
             argList.push('-i');

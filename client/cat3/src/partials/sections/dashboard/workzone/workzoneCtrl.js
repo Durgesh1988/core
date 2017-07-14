@@ -222,10 +222,4 @@ angular.module('dashboard.workzone', ['angularTreeview', 'mgcrea.ngStrap', 'work
         };
         }
     ]);
-/*
-app.config(function($sceDelegateProvider) {
-    $sceDelegateProvider.resourceUrlWhitelist([
-        'http://www.google.com/!**'
-    ]);
-});
-*/
+

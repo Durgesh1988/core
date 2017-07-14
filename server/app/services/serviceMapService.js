@@ -736,7 +736,7 @@ function checkCredentialsForResource(resource,resourceId,credentials,callback) {
                                     var queryObj = {
                                         'authentication': 'success',
                                         'resourceDetails.bootStrapState': bootStrapState,
-                                        'credentials':encryptedCredentials,
+                                        'resourceDetails.credentials':encryptedCredentials,
                                         'category': instanceCategory
                                     }
                                     resourceModel.updateResourceById(resourceId, queryObj, callback)

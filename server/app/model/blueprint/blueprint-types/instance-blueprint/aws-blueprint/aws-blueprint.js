@@ -138,12 +138,13 @@ AWSInstanceBlueprintSchema.methods.launch = function (launchParams, callback) {
                         "keyPairName": aKeyPair.keyPairName
                     };
                 }
-                var encryptedPassword;
-                var encryptedPemFileLocation;
+                var credentials = {
+                    username:anImage.userName
+                }
                 if (anImage.instancePassword && anImage.instancePassword.length) {
-                    encryptedPassword = anImage.instancePassword;
+                    credentials.password = anImage.instancePassword;
                 } else {
-                    encryptedPemFileLocation = appConfig.instancePemFilesDir + aKeyPair._id;
+                    credentials.fileId = aKeyPair.fileId;
                 }
                 var securityGroupIds = [];
                 for (var i = 0; i < self.securityGroupIds.length; i++) {
@@ -172,7 +173,7 @@ AWSInstanceBlueprintSchema.methods.launch = function (launchParams, callback) {
                                 projectId: launchParams.projectId,
                                 projectName: launchParams.projectName,
                                 envId: launchParams.envId,
-                                environmentName: launchParams.envName,
+                                envName: launchParams.envName,
                             },
                             providerDetails: {
                                 id: launchParams.cloudProviderId,
@@ -193,12 +194,8 @@ AWSInstanceBlueprintSchema.methods.launch = function (launchParams, callback) {
                                 privateIp: instanceData.PrivateIpAddress,
                                 type: instanceData.InstanceType,
                                 launchTime: Date.parse(instanceData.LaunchTime),
+                                credentials: credentials,
                                 bootStrapState:'bootStrapping'
-                            },
-                            credentials: {
-                                username: anImage.userName,
-                                pemFileLocation: encryptedPemFileLocation,
-                                password: encryptedPassword
                             },
                             configDetails: {
                                 id: launchParams.infraManagerId,
@@ -247,7 +244,10 @@ AWSInstanceBlueprintSchema.methods.launch = function (launchParams, callback) {
                         function createInstance(resource) {
                             instanceIds.push(resource._id);
                             if(instanceIds.length = instanceCount){
-                                callback(null,instanceIds);
+                                callback(null, {
+                                    "id": instanceIds,
+                                    "message": "instance launch success"
+                                });
                             }
                             if (launchParams.serviceMapObj) {
                                 var serviceObj = launchParams.serviceMapObj;
@@ -339,7 +339,7 @@ AWSInstanceBlueprintSchema.methods.launch = function (launchParams, callback) {
                             };
                             logsDao.insertLog(logData);
                             noticeService.updater(launchParams.actionLogId, 'log', logData);
-                            ec2.waitForInstanceRunnnigState(instance.platformId, function (err, instanceData) {
+                            ec2.waitForInstanceRunnnigState(resource.resourceDetails.platformId, function (err, instanceData) {
                                 if (err) {
                                     var timestamp = new Date().getTime();
                                     if (launchParams.auditTrailId !== null) {

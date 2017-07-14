@@ -21,43 +21,42 @@ This is a temproray class. these methods will me moved to model once mvc comes i
 var Cryptography = require('./utils/cryptography');
 var appConfig = require('_pr/config');
 var uuid = require('node-uuid');
+var fileUpload = require('_pr/model/file-upload/file-upload');
 var fileIo = require('./utils/fileio');
 var fs = require('fs');
 var logger = require('_pr/logger')(module);
 
 module.exports.encryptCredential = function(credentials, callback) {
-    logger.debug(credentials);
     var cryptoConfig = appConfig.cryptoSettings;
     var encryptedCredentials = {};
-
     var cryptography = new Cryptography(cryptoConfig.algorithm, cryptoConfig.password);
     if (credentials) {
-        encryptedCredentials.username = credentials.username;
+        encryptedCredentials.username = credentials.username?credentials.username:null;
         if (credentials.password) {
             encryptedCredentials.password = cryptography.encryptText(credentials.password, cryptoConfig.encryptionEncoding, cryptoConfig.decryptionEncoding);
             callback(null, encryptedCredentials);
         } else {
             var encryptedPemFileLocation = appConfig.instancePemFilesDir + uuid.v4();
-            cryptography.encryptFile(credentials.pemFileLocation, cryptoConfig.encryptionEncoding, encryptedPemFileLocation, cryptoConfig.decryptionEncoding, function(err) {
-                fileIo.removeFile(credentials.pemFileLocation, function(err) {
+            var fileId = uuid.v4();
+            cryptography.encryptFile(credentials.pemFileData, cryptoConfig.encryptionEncoding, encryptedPemFileLocation, cryptoConfig.decryptionEncoding, function(err) {
+                fileUpload.uploadFile(fileId,encryptedPemFileLocation,fileId,function(err,data){
+                    fileIo.removeFile(encryptedPemFileLocation, function(err) {
+                        if (err) {
+                            logger.debug("Unable to delete temp pem file =>", err);
+                        } else {
+                            logger.debug("temp pem file deleted =>");
+                        }
+                    });
                     if (err) {
-                        logger.debug("Unable to delete temp pem file =>", err);
-                    } else {
-                        logger.debug("temp pem file deleted =>");
+                        callback(err, null);
+                        return;
                     }
-                });
-
-                if (err) {
-                    callback(err, null);
-                    return;
-                }
-                encryptedCredentials.pemFileLocation = encryptedPemFileLocation;
-                callback(null, encryptedCredentials);
+                    encryptedCredentials.fileId = fileId;
+                    callback(null, encryptedCredentials);
+                })
             });
         }
-
     }
-
 };
 
 module.exports.decryptCredential = function(credentials, callback) {
@@ -65,43 +64,18 @@ module.exports.decryptCredential = function(credentials, callback) {
     decryptedCredentials.username = credentials.username;
     var cryptoConfig = appConfig.cryptoSettings;
     var cryptography = new Cryptography(cryptoConfig.algorithm, cryptoConfig.password);
-
-    if (credentials.pemFileLocation && credentials.source && credentials.source !== null) {
-        cryptography.decryptFileContentToBase64(credentials.pemFileLocation, cryptoConfig.decryptionEncoding,cryptoConfig.encryptionEncoding, function(err,data) {
-            if (err) {
-                logger.debug(err);
-                callback(err, null);
-                return;
+    if (credentials.fileId) {
+        fileUpload.getReadStreamFileByFileId(credentials.fileId,function(err,fileDetails){
+            if(err){
+                callback(err,null);
             }else{
-                decryptedCredentials.fileData = data.base64Data;
-                decryptedCredentials.decryptedData = data.decryptedData;
-                callback(null,decryptedCredentials);
-                return
-            }
-        });
-    }else if (credentials.pemFileLocation) {
-        var tempUncryptedPemFileLoc = appConfig.tempDir + uuid.v4();
-        cryptography.decryptFile(credentials.pemFileLocation, cryptoConfig.decryptionEncoding, tempUncryptedPemFileLoc, cryptoConfig.encryptionEncoding, function(err) {
-            if (err) {
-                logger.debug(err);
-                callback(err, null);
-                return;
-            }
-            fs.chmod(tempUncryptedPemFileLoc, 0600, function(err) {
-                if (err) {
-                    logger.debug(err);
-                    callback(err, null);
-                    return;
-                }
-                decryptedCredentials.pemFileLocation = tempUncryptedPemFileLoc;
+                decryptedCredentials.base64FileData = new Buffer(cryptography.decryptText(fileDetails.fileData, cryptoConfig.decryptionEncoding, cryptoConfig.encryptionEncoding)).toString('base64');
+                decryptedCredentials.pemFileData = cryptography.decryptText(fileDetails.fileData, cryptoConfig.decryptionEncoding, cryptoConfig.encryptionEncoding);
                 callback(null, decryptedCredentials);
-            });
-
-        });
-
+            }
+        })
     }else {
         decryptedCredentials.password = cryptography.decryptText(credentials.password, cryptoConfig.decryptionEncoding, cryptoConfig.encryptionEncoding);
         callback(null, decryptedCredentials);
     }
-
 };

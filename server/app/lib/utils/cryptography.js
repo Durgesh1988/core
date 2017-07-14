@@ -57,28 +57,17 @@ function Cryptography(algorithm, password) {
        callback(null,encryptedTexts);
     }
 
-    this.encryptFile = function(inputFilePath, encryptionEncoding, outputFilepath, decryptionEncoding, callback) {
-        fs.readFile(inputFilePath, {
-            encoding: 'ascii'
-        }, function(err, fileData) {
+    this.encryptFile = function(fileData, encryptionEncoding, outputFilePath, decryptionEncoding, callback) {
+        var encryptedData = encrypt(fileData, encryptionEncoding, decryptionEncoding);
+        fs.writeFile(outputFilePath, encryptedData, {
+        }, function(err) {
             if (err) {
                 logger.debug(err);
-                callback(err);
+                callback(err, null);
                 return;
             }
-            var encryptedData = encrypt(fileData, encryptionEncoding, decryptionEncoding);
-            fs.writeFile(outputFilepath, encryptedData, {
-                //encoding: outputEncoding
-            }, function(err) {
-                if (err) {
-                    logger.debug(err);
-                    callback(err, null);
-                    return;
-                }
-                callback(null);
-            });
+            callback(null);
         });
-
     };
 
     this.decryptText = function(text, decryptionEncoding, encryptionEncoding) {
@@ -119,22 +108,6 @@ function Cryptography(algorithm, password) {
                 logger.debug('Set file ' + outputFilepath + ' permission to 400');
                 callback(null);
             });
-        });
-    };
-
-    this.decryptFileContentToBase64 = function(inputFilePath, decryptionEncoding,encryptionEncoding, callback) {
-        fs.readFile(inputFilePath, {
-            encoding: 'ascii'
-        }, function(err, fileData) {
-            if (err) {
-                logger.debug(err);
-                callback(err,null);
-                return;
-            }else {
-                var decryptData = decrypt(fileData, decryptionEncoding, encryptionEncoding);
-                var encodedData = new Buffer(decryptData).toString('base64');
-                return callback(null, {base64Data:encodedData,decryptedData:decryptData});
-            }
         });
     };
 

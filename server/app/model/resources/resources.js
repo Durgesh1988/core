@@ -21,6 +21,7 @@ var mongoosePaginate = require('mongoose-paginate');
 var instanceResource = require('_pr/model/resources/resource-types/instance-resource');
 var s3Resource = require('_pr/model/resources/resource-types/s3-resource');
 var rdsResource = require('_pr/model/resources/resource-types/rds-resource');
+var logsDao = require('_pr/model/dao/logsdao.js');
 var Schema = mongoose.Schema;
 
 var ResourceSchema = new Schema({
@@ -95,9 +96,26 @@ var ResourceSchema = new Schema({
         }
     },
     configDetails: {
-        id: String,
-        name:String,
-        nodeName: String,
+        id: {
+            type: String,
+            required: false,
+            trim: true
+        },
+        name:{
+            type: String,
+            required: false,
+            trim: true
+        },
+        nodeName: {
+            type: String,
+            required: false,
+            trim: true
+        },
+        type: {
+            type: String,
+            required: false,
+            trim: true
+        },
         run_list: [{
             type: String,
             trim: true

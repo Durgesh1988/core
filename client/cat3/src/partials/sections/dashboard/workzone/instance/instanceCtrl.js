@@ -70,7 +70,7 @@
                                 for (var j = 0; j < appItem.length; j++) {
                                     var url = appItem[j].url;
                                     if (url) {
-                                        url = url.replace('$host', $scope.instanceList[i].instanceIP);
+                                        url = url.replace('$host', $scope.instanceList[i].resourceDetails.publicIp);
                                         $scope.instanceList[i].appUrls[j].url = url;
                                     }
                                 }
@@ -78,7 +78,6 @@
                         }
                     }
                 };
-
                 $scope.selectedInstanceId=[];
                 $scope.instancePageLevelLoader = true;
                 $scope.instStartStopFlag = false;
@@ -147,7 +146,7 @@
                             width: 100,
                             enableSorting: false,
                             cellTemplate: '<img class="instanceRoleLogo" ng-src="{{grid.appScope.getRoleLogo(row.entity)}}" />' +
-                                '<img class="instanceRoleLogoDocker" src="images/global/docker.png" ng-show="row.entity.docker && row.entity.docker.dockerEngineStatus === \'success\'" ng-click="grid.appScope.openContainersTab()">',
+                                '<img class="instanceRoleLogoDocker" src="images/global/docker.png" ng-show="row.entity.resourceDetails && row.entity.resourceDetails.dockerEngineStatus === \'success\'" ng-click="grid.appScope.openContainersTab()">',
                             cellTooltip: true
                         }, {
                             name: 'Name',
@@ -160,25 +159,25 @@
                         }, {
                             name: 'Provider Name',
                             displayName: 'Provider Name',
-                            cellTemplate: '<span ng-show="row.entity.providerName">{{row.entity.providerName}}</span>' +
-                                '<span ng-hide="row.entity.providerName">NA</span>',
+                            cellTemplate: '<span ng-show="row.entity.providerDetails.name">{{row.entity.providerDetails.name}}</span>' +
+                                '<span ng-hide="row.entity.providerDetails.name">NA</span>',
                             cellTooltip: true
                         }, {
                             name: 'Ip Address',
                             displayName: 'IP Address',
-                            cellTemplate: '<span ng-if="row.entity.instanceIP"><strong>Public:</strong> {{row.entity.instanceIP}}<br /></span><span ng-if="row.entity.privateIpAddress"><strong>Private:</strong> {{row.entity.privateIpAddress}}</span>',
+                            cellTemplate: '<span ng-if="row.entity.resourceDetails.publicIp"><strong>Public:</strong> {{row.entity.resourceDetails.publicIp}}<br /></span><span ng-if="row.entity.resourceDetails.privateIp"><strong>Private:</strong> {{row.entity.resourceDetails.privateIp}}</span>',
                             cellTooltip: true
                         }, {
                             name: 'RunLists',
                             width: 90,
                             enableSorting: false,
-                            cellTemplate: '<span ng-if="row.entity.runlist.length > 0"><i class="fa fa-eye fa-2x cursor" "View All RunList" ng-click="grid.appScope.operationSet.viewRunList(row.entity)"></i></span><span ng-if="row.entity.runlist.length === 0">NA</span>',
+                            cellTemplate: '<span ng-if="row.entity.configDetails.run_list.length > 0"><i class="fa fa-eye fa-2x cursor" "View All RunList" ng-click="grid.appScope.operationSet.viewRunList(row.entity)"></i></span><span ng-if="row.entity.configDetails.run_list.length === 0">NA</span>',
                             cellTooltip: true
                         }, {
                             name: 'Status',
                             width: 90,
                             enableSorting: false,
-                            cellTemplate: '<div class="status-state {{grid.appScope.getAWSStatus(row.entity.instanceState,1)}}"></div>',
+                            cellTemplate: '<div class="status-state {{grid.appScope.getAWSStatus(row.entity.resourceDetails.state,1)}}"></div>',
                             cellTooltip: true
                         }, {
                             name: 'Log Info',
@@ -250,7 +249,7 @@
                                 $scope.instancesGridOptions.totalItems = $scope.totalCards = result.data.metaData.totalRecords;
                                 /*calling the helper method to check if $host is present 
                                 so that it gets replaced with instanceIP*/
-                                helper.setHostToIp(result.data.instances);
+                                helper.setHostToIp(result.data.resources);
                                 $scope.tabData = $scope.instanceList;
                                 if ($scope.totalCards > $scope.paginationParams.pageSize) {
                                     $scope.cardsAvailable = true;
@@ -308,7 +307,7 @@
                     getRoleLogo: function(inst) {
                         var imagePath = '';
                         var type = '';
-                        type = inst.blueprintData && inst.blueprintData.templateId;
+                        type = inst.blueprintDetails && inst.blueprintDetails.templateType;
                         switch (type) {
                             case 'chef':
                             case 'chef_import':
@@ -336,7 +335,7 @@
                     getOSLogo: function(inst) {
                         var imagePath = '';
                         var type = '';
-                        type = inst.hardware && inst.hardware.platform;
+                        type = inst.resourceDetails.hardware && inst.resourceDetails.hardware.platform;
                         switch (type) {
                             case 'unknown':
                                 imagePath = 'images/osIcons/linux.png';

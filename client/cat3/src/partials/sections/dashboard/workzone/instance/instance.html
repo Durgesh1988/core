@@ -124,18 +124,18 @@
 						<hr/>
 					</div>
 					<div class="card-status-state">
-						<div class="status-state {{getAWSStatus(inst.instanceState,'image')}}">
+						<div class="status-state {{getAWSStatus(inst.resourceDetails.state,'image')}}">
 							<i class="fa fa-info-circle card-circle-info cursor" title="More Info" ng-click="operationSet.viewLogs(inst)" ng-show="perms.logInfo"></i>
 							<img class="docker-image dockerenabledinstacne" alt="Docker"
-							src="images/global/docker.png" ng-show="inst.docker && inst.docker.dockerEngineStatus === 'success'" ng-click="openContainersTab()"/>
+							src="images/global/docker.png" ng-show="inst.resourceDetails.dockerEngineState && inst.resourceDetails.dockerEngineStatus === 'success'" ng-click="openContainersTab()"/>
 						</div>
 					</div>
 					<div class="instance-ip">
-						<strong ng-if="inst.instanceIP">{{inst.instanceIP}}</strong><strong ng-if="!inst.instanceIP && inst.privateIpAddress">{{inst.privateIpAddress}}</strong>
+						<strong ng-if="inst.resourceDetails.publicIp">{{inst.resourceDetails.publicIp}}</strong><strong ng-if="!inst.resourceDetails.publicIp && inst.resourceDetails.privateIp">{{inst.resourceDetails.privateIp}}</strong>
 					</div>
-					<div class="provider-id" title="{{getPlatformId(inst.providerType,inst.platformId)}}">
-						{{getPlatformId(inst.providerType,inst.platformId)}}
-						<i class="fa fa-line-chart cursor marginleft5" title="Usage" ng-show="inst.providerType" ng-click="showInstanceUsage(inst);"></i>
+					<div class="provider-id" title="{{getPlatformId(inst.providerDetails.type,inst.resourceDetails.platformId)}}">
+						{{getPlatformId(inst.providerDetails.type,inst.resourceDetails.platformId)}}
+						<i class="fa fa-line-chart cursor marginleft5" title="Usage" ng-show="inst.providerDetails.type" ng-click="showInstanceUsage(inst);"></i>
 					</div>
 					<div class="card-btns" ng-hide="hoverEdit">
 						<div ng-show="actionSet.isChefEnabled(inst) &amp;&amp; perms.chefClientRun" title="Chef Client Run" class="btn-icons icon-chef" ng-click="operationSet.updateCookbook(inst);">
@@ -182,7 +182,7 @@
 											</span>
 										</li>
 										<li class="ssh-bs">
-											<span ng-click="operationSet.instanceSSH(inst)" ng-show="inst.hardware.os==='linux' || inst.hardware.os==='centos'">
+											<span ng-click="operationSet.instanceSSH(inst)" ng-show="inst.resourceDetails.hardware.os==='linux' || inst.resourceDetails.hardware.os==='centos'">
 												<i class="fa fa-briefcase dropdown-icon"></i>
 												SSH
 											</span>
@@ -196,13 +196,13 @@
 										</span>
 									  </li>
 									<li ng-click="instStartStopFlag || operationSet.changeInstanceStatus(inst)" ng-show="perms.start 
-									  && inst.instanceState === 'stopped' && inst.providerId" ng-disabled="instStartStopFlag" ng-class="{'hideStartStopCur': instStartStopFlag}">
+									  && inst.resourceDetails.state === 'stopped' && inst.providerDetails.id" ng-disabled="instStartStopFlag" ng-class="{'hideStartStopCur': instStartStopFlag}">
 										<span>
 											<i class="fa fa-play dropdown-icon"></i>
 											Start Instance
 										</span>
 									</li>
-									<li ng-click="instStartStopFlag || operationSet.changeInstanceStatus(inst)" ng-show="perms.stop && inst.instanceState === 'running' && inst.providerId" ng-disabled="instStartStopFlag"  ng-class="{'hideStartStopCur': instStartStopFlag}">
+									<li ng-click="instStartStopFlag || operationSet.changeInstanceStatus(inst)" ng-show="perms.stop && inst.resourceDetails.state  === 'running' && inst.providerDetails.id" ng-disabled="instStartStopFlag"  ng-class="{'hideStartStopCur': instStartStopFlag}">
 										<span>
 											<i class="fa fa-stop dropdown-icon"></i>
 											Stop Instance

@@ -22,6 +22,8 @@ var resources = require('_pr/model/resources/resources');
 var async = require('async');
 var apiUtil = require('_pr/lib/utils/apiUtil.js');
 var settingService = require('_pr/services/settingsService');
+var logsDao = require('_pr/model/dao/logsdao.js');
+var userDao = require('_pr/model/users.js');
 var logger = require('_pr/logger')(module);
 
 module.exports.setRoutes = function(app, sessionVerificationFunc) {
@@ -31,53 +33,112 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
     app.get('/resources/track/report',getResourceTrackReport);
     function getAllResources(req, res) {
             var reqObj = {};
-            async.waterfall(
-                [
-                    function(next){
-                        apiUtil.changeRequestForJqueryPagination(req.query,next);
-                    },
-                    function(reqData,next) {
-                        reqObj = reqData;
-                        apiUtil.paginationRequest(reqData, 'resources', next);
-                    },
-                    function(paginationReq, next) {
-                        if(paginationReq.filterBy && paginationReq.filterBy.resourceType && paginationReq.filterBy.resourceType === 'S3'){
-                            paginationReq['searchColumns'] = ['resourceDetails.bucketName','resourceDetails.bucketOwnerName'];
-                        }
-                        if(paginationReq.filterBy && paginationReq.filterBy.resourceType && paginationReq.filterBy.resourceType === 'RDS') {
-                            paginationReq['searchColumns'] = ['resourceDetails.dbName','resourceDetails.dbEngine','resourceDetails.dbInstanceClass','resourceDetails.region'];
-                        }
-                        if(paginationReq.filterBy && paginationReq.filterBy.resourceType && paginationReq.filterBy.resourceType === 'EC2') {
-                            paginationReq['searchColumns'] = ['resourceDetails.platformId','resourceDetails.state','name','providerDetails.region.region'];
-                        }
-                        apiUtil.databaseUtil(paginationReq, next);
-                    },
-                    function(filterQuery,next){
-                        settingService.getOrgUserFilter(req.session.user.cn, function (err, orgIds) {
-                            if (err) {
-                                next(err);
-                            }else if(orgIds.length > 0){
-                                filterQuery.queryObj['masterDetails.orgId'] = { $in : orgIds };
-                                next(null,filterQuery);
-                            }else{
-                                next(null,filterQuery);
+            if(!req.query.paginationType) {
+                async.waterfall(
+                    [
+                        function (next) {
+                            apiUtil.changeRequestForJqueryPagination(req.query, next);
+                        },
+                        function (reqData, next) {
+                            reqObj = reqData;
+                            apiUtil.paginationRequest(reqData, 'resources', next);
+                        },
+                        function (paginationReq, next) {
+                            if (paginationReq.filterBy && paginationReq.filterBy.resourceType && paginationReq.filterBy.resourceType === 'S3') {
+                                paginationReq['searchColumns'] = ['resourceDetails.bucketName', 'resourceDetails.bucketOwnerName'];
                             }
-                        });
-                    },
-                    function(queryObj, next) {
-                        queryObj.isDeleted = false;
-                        resourceService.getResources(queryObj,true, next);
-                    },
-                    function(resources,next){
-                        apiUtil.changeResponseForJqueryPagination(resources,reqObj,next);
-                    }
-                ], function(err, results) {
-                    if(err){
-                        return res.status(500).send(err);
-                    }else{
-                        return res.status(200).send(results);
-                    }
-                });
+                            if (paginationReq.filterBy && paginationReq.filterBy.resourceType && paginationReq.filterBy.resourceType === 'RDS') {
+                                paginationReq['searchColumns'] = ['resourceDetails.dbName', 'resourceDetails.dbEngine', 'resourceDetails.dbInstanceClass', 'resourceDetails.region'];
+                            }
+                            if (paginationReq.filterBy && paginationReq.filterBy.resourceType && paginationReq.filterBy.resourceType === 'EC2') {
+                                paginationReq['searchColumns'] = ['resourceDetails.platformId', 'resourceDetails.state', 'name', 'providerDetails.region.region'];
+                            }
+                            apiUtil.databaseUtil(paginationReq, next);
+                        },
+                        function (filterQuery, next) {
+                            settingService.getOrgUserFilter(req.session.user.cn, function (err, orgIds) {
+                                if (err) {
+                                    next(err);
+                                } else if (orgIds.length > 0) {
+                                    filterQuery.queryObj['masterDetails.orgId'] = {$in: orgIds};
+                                    next(null, filterQuery);
+                                } else {
+                                    next(null, filterQuery);
+                                }
+                            });
+                        },
+                        function (queryObj, next) {
+                            if(req.query.monitor) {
+                                if (req.query.monitor === 'true') {
+                                    queryObj.queryObj.monitor = {$ne: null};
+                                } else {
+                                    queryObj.queryObj.monitor = null
+                                }
+                            }
+                            resourceService.getResources(queryObj, true, next);
+                        },
+                        function (resources, next) {
+                            apiUtil.changeResponseForJqueryPagination(resources, reqObj, next);
+                        }
+                    ], function (err, results) {
+                        if (err) {
+                            return res.status(500).send(err);
+                        } else {
+                            return res.status(200).send(results);
+                        }
+                    });
+            }else{
+                async.waterfall(
+                    [
+                        function(next){
+                            apiUtil.paginationRequest(req.query, 'resources', next);
+                        },
+                        function(paginationReq, next) {
+                            if(paginationReq.filterBy && paginationReq.filterBy.resourceType && paginationReq.filterBy.resourceType === 'S3'){
+                                paginationReq['searchColumns'] = ['resourceDetails.bucketName','resourceDetails.bucketOwnerName'];
+                            }
+                            if(paginationReq.filterBy && paginationReq.filterBy.resourceType && paginationReq.filterBy.resourceType === 'RDS') {
+                                paginationReq['searchColumns'] = ['resourceDetails.dbName','resourceDetails.dbEngine','resourceDetails.dbInstanceClass','resourceDetails.region'];
+                            }
+                            if(paginationReq.filterBy && paginationReq.filterBy.resourceType && paginationReq.filterBy.resourceType === 'EC2') {
+                                paginationReq['searchColumns'] = ['resourceDetails.platformId','resourceDetails.state','name','providerDetails.region.region'];
+                            }
+                            reqObj = paginationReq;
+                            apiUtil.databaseUtil(paginationReq, next);
+                        },
+                        function(filterQuery,next){
+                            settingService.getOrgUserFilter(req.session.user.cn, function (err, orgIds) {
+                                if (err) {
+                                    next(err);
+                                }else if(orgIds.length > 0){
+                                    filterQuery.queryObj['masterDetails.orgId'] = { $in : orgIds };
+                                    next(null,filterQuery);
+                                }else{
+                                    next(null,filterQuery);
+                                }
+                            });
+                        },
+                        function(queryObj, next) {
+                            if(req.query.monitor) {
+                                if (req.query.monitor === 'true') {
+                                    queryObj.queryObj.monitor = {$ne: null};
+                                } else {
+                                    queryObj.queryObj.monitor = null
+                                }
+                            }
+                            resourceService.getResources(queryObj,true, next);
+                        },
+                        function(resources,next){
+                            apiUtil.paginationResponse(resources,reqObj,next);
+                        }
+                    ], function(err, results) {
+                        if(err){
+                            return res.status(500).send(err);
+                        }else{
+                            return res.status(200).send(results);
+                        }
+                    });
+            }
     };
 
     function getResourceById(req,res){
@@ -233,6 +294,30 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
         });
     });
 
+    app.post('/resources/importInstance', function(req, res) {
+        async.waterfall(
+            [
+                function (next) {
+                    userDao.haspermission(req.session.user.cn, 'instancelaunch', 'execute', null, req.session.user.permissionset, next)
+                },
+                function(importFlag, next) {
+                    if(importFlag) {
+                        req.body.user = req.session.user.cn;
+                        resourceService.importInstance(req.body,next);
+                    }else{
+                        next({code:400,message:'User have no rights for Importing Instance'})
+                    }
+                }
+            ],
+            function (err, results) {
+                if (err) {
+                    return res.status(500).send(err);
+                } else {
+                    return res.status(200).send(results);
+                }
+            });
+    });
+
     app.get('/resources/:resourceId/authenticate', function(req, res) {
         resources.getResourceById(req.params.resourceId,function(err,resource){
             if(err){
@@ -259,6 +344,31 @@ module.exports.setRoutes = function(app, sessionVerificationFunc) {
                 res.send(result.code,result)
                 return
             }
+        });
+    });
+
+    app.get('/resources/:resourceId/logs', function(req, res) {
+        var queryObj = {
+            instanceId:req.params.resourceId
+        }
+        if (req.query.timestamp && req.query.timestamp !== 'undefined') {
+            queryObj.timestamp = {
+                "$gt": parseInt(req.query.timestamp)
+            }
+        }
+        if (req.query.timestampEnded && req.query.timestampEnded !== 'undefined') {
+            queryObj.timestamp = {
+                "$lte": parseInt(req.query.timestampEnded)
+            }
+        }
+        logsDao.getLogsDetails(queryObj, function (err, data) {
+            if (err) {
+                logger.error("Found error to fetch Logs: ", err);
+                res.send(500);
+                return;
+            }
+            res.send(data);
+
         });
     });
 };

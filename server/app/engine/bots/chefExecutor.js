@@ -300,17 +300,17 @@ function executeChefOnRemote(instance, botDetail,reqBody,actionLogId, auditTrail
             host: instance.instanceIP,
             port: 22
         }
-        if (decryptedCredentials.pemFileLocation) {
-            sshOptions.privateKey = decryptedCredentials.pemFileLocation;
+        if (decryptedCredentials.pemFileData) {
+            sshOptions.privateKey = decryptedCredentials.pemFileData;
             authenticationObj.id = "Pem_Based_Authentication";
             authenticationObj.authType = "pem";
             authenticationObj.auth = {
                 "username": decryptedCredentials.username,
-                "fileData": decryptedCredentials.fileData
+                "pemFileData": decryptedCredentials.pemFileData
             }
             envObj.hostname = instance.instanceIP;
             envObj.authReference = "Pem_Based_Authentication";
-        } else {
+        }else {
             sshOptions.password = decryptedCredentials.password;
             authenticationObj.id = "Password_Based_Authentication";
             authenticationObj.authType = "password";

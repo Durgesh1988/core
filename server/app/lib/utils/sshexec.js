@@ -105,18 +105,9 @@ module.exports = function(opts) {
             if (options.passphrase) {
                 connectionParamsObj.passphrase = options.passphrase;
             }
-            if(options.pemFileData){
-                connectionParamsObj.privateKey = options.pemFileData;
+            if(options.pemFileData || options.privateKey){
+                connectionParamsObj.privateKey = options.pemFileData?options.pemFileData:options.privateKey;
                 connect(connectionParamsObj, callback);
-            }else {
-                fileIo.readFile(options.privateKey, function (err, key) {
-                    if (err) {
-                        callback(err, PEM_FILE_READ_ERROR);
-                        return;
-                    }
-                    connectionParamsObj.privateKey = key;
-                    connect(connectionParamsObj, callback);
-                });
             }
         } else {
             logger.debug("SSh password...");

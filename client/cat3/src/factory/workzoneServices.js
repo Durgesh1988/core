@@ -140,11 +140,13 @@
 				/*instanceCtrl*/
 				getPaginatedInstances: function(envParams,paginationParams,filterBy) {
 					var pageStr = paginationUtil.pageObjectToString(paginationParams);
-					var url = '/organizations/' + envParams.org + '/businessgroups/' + envParams.bg + 
-					'/projects/' + envParams.proj + '/environments/' + envParams.env + '/instanceList'+pageStr;                    
+					var url = '/resources?paginationType=angular'+pageStr;
+					var filterObj = 'category:managed,masterDetails.orgId:'+envParams.org+',masterDetails.bgId:'+envParams.bg+',masterDetails.projectId:'+envParams.proj+',masterDetails.envId:'+envParams.env;
                     if(filterBy){
-                       url += '&filterBy=' + filterBy;
-                    }
+                    	url += '&filterBy=' + filterBy +','+filterObj;
+                    }else{
+                    	url += '&filterBy=' + filterObj;
+					}
 					return $http.get(fullUrl(url), Auth.getHeaderObject());
 				},
 				getCheckIfConfigListAvailable: function () {
@@ -164,10 +166,8 @@
 					var url = '/instances/' + instanceId + '/updateName';
 					return $http.post(fullUrl(url), instanceName, Auth.getHeaderObject());
 				},
-				postImportByIP: function (urlParams, reqBody) {
-					var url = '/organizations/' + urlParams.org + '/businessgroups/' +
-							urlParams.bg + '/projects/' + urlParams.proj + '/environments/' +
-							urlParams.env + '/addInstance';
+				postImportByIP: function (reqBody) {
+					var url = '/resources/importInstance';
 					return $http.post(fullUrl(url), reqBody, Auth.getHeaderObject());
 				},
 				postLaunchDockerBlueprint : function(instid,repopath,reqBody){
@@ -179,7 +179,7 @@
 					if (timestamp) {
 						urlParam = timestamp;
 					}
-					var url = '/instances/' + instanceId + '/logs' + urlParam;
+					var url = '/resources/' + instanceId + '/logs' + urlParam;
 					return $http.get(fullUrl(url), Auth.getHeaderObject());
 				},
 				/*controlPanelCtrl*/

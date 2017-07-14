@@ -29,6 +29,12 @@ var async = require('async');
 var dateUtil = require('_pr/lib/utils/dateUtil');
 var instancesModel = require('_pr/model/classes/instance/instance');
 var commonService = require('_pr/services/commonService');
+var masterUtil = require('_pr/lib/utils/masterUtil.js');
+var monitorsModel = require('_pr/model/monitors/monitors.js');
+var configmgmtDao = require('_pr/model/d4dmasters/configmgmt.js');
+var credentialCryptography = require('_pr/lib/credentialcryptography');
+var auditTrailService = require('_pr/services/auditTrailService.js');
+var uuid = require('node-uuid');
 
 
 
@@ -49,6 +55,7 @@ resourceService.getAllResourcesForProvider =  getAllResourcesForProvider;
 resourceService.updateAWSResourceCostsFromCSV = updateAWSResourceCostsFromCSV;
 resourceService.updateDomainNameForInstance = updateDomainNameForInstance;
 resourceService.aggregateResourceCostsForPeriod = aggregateResourceCostsForPeriod;
+resourceService.importInstance = importInstance;
 
 // @TODO To be cached if needed. In memory data will not exceed 200MB for upto 2000 instances.
 // @TODO Unique identifier of S3 and RDS resources should be available in resource without casting.
@@ -1390,5 +1397,215 @@ function updateAWSResourceTags(resourceId,provider,tags,callback){
         }
 
     })
+}
 
+function importInstance(reqBody,callback){
+    masterUtil.getParticularProject(reqBody.projectId, function (err, project) {
+        if (err) {
+            return callback({message: "Failed to get project via project id"});
+        }
+        if (project.length === 0) {
+            return callback({message: "Unable to find Project Information from project id"});
+        }
+        var queryObj = {
+            'masterDetails.orgId': reqBody.orgId,
+            '$or': [{
+                'resourceDetails.publicIp': reqBody.fqdn
+            }, {
+                'resourceDetails.privateIp': reqBody.fqdn
+            }, {
+                'configDetails.nodeName': reqBody.fqdn
+            }],
+            isDeleted: false
+        }
+        resources.getResources(queryObj, function (err, instances) {
+            if (err) {
+                return callback({message: "Error occured while fetching instances by IP"});
+            }
+            if (instances.length && instances[0].category === 'managed') {
+                return callback({message: "An Instance with the same IP already exists."});
+            }
+            if (reqBody.credentials && reqBody.credentials.username && (reqBody.credentials.password || reqBody.credentials.pemFileData)) {
+                var nodeDetail = {
+                    nodeIp: reqBody.fqdn,
+                    nodeOs: reqBody.os
+                }
+                commonService.checkNodeCredentials(nodeDetail, reqBody.credentials, function (err, credentialFlag) {
+                    if (err || credentialFlag === false) {
+                        return callback({message: "The username or password/pemfile you entered is incorrect"});
+                    } else {
+                        configmgmtDao.getEnvNameFromEnvId(reqBody.envId, function (err, envName) {
+                            if (err) {
+                                return callback({message: "Environment is not Present in DB"});
+                            }
+                            credentialCryptography.encryptCredential(reqBody.credentials, function (err, encryptedCredentials) {
+                                if (err) {
+                                    return callback({message: "Unable to encrypt credentials"});
+                                }
+                                if (!reqBody.appUrls) {
+                                    reqBody.appUrls = [];
+                                }
+                                monitorsModel.getById(reqBody.monitorId, function (err, monitor) {
+                                    var appUrls = reqBody.appUrls;
+                                    if (appConfig.appUrls && appConfig.appUrls.length) {
+                                        appUrls = appUrls.concat(appConfig.appUrls);
+                                    }
+                                    var actionId = uuid.v4();
+                                    var resourceObj = {
+                                        name: reqBody.fqdn,
+                                        category: 'managed',
+                                        masterDetails: {
+                                            orgId: reqBody.orgId,
+                                            orgName: project[0].orgname,
+                                            bgId: reqBody.bgId,
+                                            bgName: project[0].productgroupname,
+                                            projectId: reqBody.projectId,
+                                            projectName: project[0].projectname,
+                                            envId: reqBody.envId,
+                                            envName: envName
+                                        },
+                                        resourceDetails: {
+                                            platformId: reqBody.fqdn,
+                                            publicIp: reqBody.fqdn,
+                                            state: 'running',
+                                            bootStrapState: 'bootStrapping',
+                                            credentials: encryptedCredentials,
+                                            hardware: {
+                                                os: reqBody.os
+                                            }
+                                        },
+                                        configDetails: {
+                                            id: reqBody.configManagmentId,
+                                            nodeName: reqBody.fqdn
+                                        },
+                                        blueprintDetails: {
+                                            name: reqBody.fqdn,
+                                            templateType: 'Import_By_IP'
+                                        },
+                                        user: reqBody.user,
+                                        tagServer: reqBody.tagServer,
+                                        monitor: monitor,
+                                        resourceType: 'Instance',
+                                        appUrls: appUrls
+                                    }
+                                    var actionObj = {
+                                        auditType: 'Instances',
+                                        auditCategory: 'Bootstrapping instance',
+                                        status: 'running',
+                                        action: 'Import By IP',
+                                        actionStatus: 'running',
+                                        catUser: reqBody.user
+                                    };
+                                    var auditTrailObj = {
+                                        name: reqBody.fqdn,
+                                        type: 'Import By IP',
+                                        description: 'Importing a Node using IP',
+                                        category: 'Bootstrapping instance',
+                                        executionType: 'Run',
+                                        manualExecutionTime: 10,
+                                        actionLogId: actionId
+                                    };
+                                    if (instances.length > 0) {
+                                        resources.updateResourceById(instances[0]._id, resourceObj, function (err, resource) {
+                                            if (err) {
+                                                logger.error("Error in updating Resources>>>>:", err);
+                                                return callback({message: "Error in updating Resource"});
+                                            }
+                                            resourceObj._id = instances[0]._id;
+                                            auditTrailService.insertAuditTrail(resourceObj, auditTrailObj, actionObj, function (err, auditTrails) {
+                                                if (err) {
+                                                    logger.error(err);
+                                                }
+                                                var resourceDetails = {
+                                                    id: instances[0]._id,
+                                                    actionId: actionId,
+                                                    botId: null,
+                                                    botRefId: null
+                                                }
+                                                callback(null, instances[0]);
+                                                commonService.bootStrappingResource(resourceDetails, function (err, data) {
+                                                    if (err) {
+                                                        var resultTaskExecution = {
+                                                            actionStatus: "failed",
+                                                            status: "failed",
+                                                            endedOn: new Date().getTime(),
+                                                            actionLogId: actionId
+                                                        }
+                                                        auditTrailService.updateAuditTrail('Instances', auditTrails._id, resultTaskExecution, function (err, auditTrail) {
+                                                            if (err) {
+                                                                logger.error("Failed to create or update bots Log: ", err);
+                                                            }
+                                                        });
+                                                    } else {
+                                                        var resultTaskExecution = {
+                                                            actionStatus: "success",
+                                                            status: "success",
+                                                            endedOn: new Date().getTime(),
+                                                            actionLogId: actionId
+                                                        }
+                                                        auditTrailService.updateAuditTrail('Instances', auditTrails._id, resultTaskExecution, function (err, auditTrail) {
+                                                            if (err) {
+                                                                logger.error("Failed to create or update bots Log: ", err);
+                                                            }
+                                                        });
+                                                    }
+                                                })
+                                            });
+                                        })
+                                    } else {
+                                        resources.createNew(resourceObj, function (err, resource) {
+                                            if (err) {
+                                                logger.error("Error in creating Resources>>>>:", err);
+                                                return callback({message: "Error in creating Resource"});
+                                            } else {
+                                                auditTrailService.insertAuditTrail(resource, auditTrailObj, actionObj, function (err, auditTrails) {
+                                                    if (err) {
+                                                        logger.error(err);
+                                                    }
+                                                    var resourceDetails = {
+                                                        id: resource._id,
+                                                        actionId: actionId,
+                                                        botId: null,
+                                                        botRefId: null
+                                                    }
+                                                    callback(null, resource);
+                                                    commonService.bootStrappingResource(resourceDetails, function (err, data) {
+                                                        if (err) {
+                                                            var resultTaskExecution = {
+                                                                actionStatus: "failed",
+                                                                status: "failed",
+                                                                endedOn: new Date().getTime(),
+                                                                actionLogId: actionId
+                                                            }
+                                                            auditTrailService.updateAuditTrail('Instances', auditTrails._id, resultTaskExecution, function (err, auditTrail) {
+                                                                if (err) {
+                                                                    logger.error("Failed to create or update bots Log: ", err);
+                                                                }
+                                                            });
+                                                        } else {
+                                                            var resultTaskExecution = {
+                                                                actionStatus: "success",
+                                                                status: "success",
+                                                                endedOn: new Date().getTime(),
+                                                                actionLogId: actionId
+                                                            }
+                                                            auditTrailService.updateAuditTrail('Instances', auditTrails._id, resultTaskExecution, function (err, auditTrail) {
+                                                                if (err) {
+                                                                    logger.error("Failed to create or update bots Log: ", err);
+                                                                }
+                                                            })
+                                                        }
+                                                    })
+                                                })
+                                            }
+                                        })
+                                    }
+                                })
+                            })
+                        })
+                    }
+                })
+            }
+        });
+    })
 }

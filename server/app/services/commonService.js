@@ -148,14 +148,49 @@ commonService.bootStrappingResource = function bootStrappingResource(resourceDet
                         log: "Instance already BootStrapped",
                         timestamp: new Date().getTime()
                     });
-                    return callback(null,chefNodes);
+                    var queryObj = {
+                        'resourceDetails.bootStrapState': 'success',
+                        'resourceDetails.state': 'running',
+                        'category': 'managed',
+                        'configDetails.type':'chef',
+                        'resourceDetails.hardware':chefNodes[0].hardware
+                    }
+                    resourceModel.updateResourceById(resourceDetails.id, queryObj, function (err, data) {
+                        if (err) {
+                            logger.error("Error in updating Resource Authentication : " + err)
+                        }
+                        saeService.serviceMapSync(function (err, data) {
+                            if (err) {
+                                logger.error("Error in starting Service Map:");
+                            }
+                        });
+                    });
+                    var _docker = new Docker();
+                    _docker.checkDockerStatus(resourceDetails.id, function (err, retCode) {
+                        if (err) {
+                            logger.error("Failed _docker.checkDockerStatus", err);
+                            return;
+                        }
+                        logger.debug('Docker Check Returned:' + retCode);
+                        if (retCode == '0') {
+                            var queryObj = {
+                                'resourceDetails.dockerEngineState': 'success'
+                            }
+                            resourceModel.updateResourceById(resourceDetails.id, queryObj, function (err, data) {
+                                if (err) {
+                                    logger.error("Error in updating Resource Authentication : " + err)
+                                }
+                            });
+                        }
+                    });
+                    callback(null,chefNodes);
                 } else {
                     masterUtil.getCongifMgmtsById(resources.configDetails.id, function (err, serverDetails) {
                         if (err) {
                             return callback(err, null);
                         }
                         services.updateService({
-                            'resources': {$elemMatch: {id: resourceId}}
+                            'resources': {$elemMatch: {id: resourceDetails.id}}
                         }, {
                             'resources.$.bootStrapState': 'bootStrapping'
                         }, function (err, result) {
@@ -164,14 +199,15 @@ commonService.bootStrappingResource = function bootStrappingResource(resourceDet
                             }
                         });
                         var queryObj = {
-                            'resourceDetails.bootStrapState': 'bootStrapping'
+                            'resourceDetails.bootStrapState': 'bootStrapping',
+                            'configDetails.type':serverDetails.configType
                         }
-                        resourceModel.updateResourceById(resourceId, queryObj, function (err, data) {
+                        resourceModel.updateResourceById(resourceDetails.id, queryObj, function (err, data) {
                             if (err) {
                                 logger.error("Error in updating Resource:");
                             }
                         });
-                        credentialCryptography.decryptCredential(resources.credentials, function (err, decryptedCredentials) {
+                        credentialCryptography.decryptCredential(resources.resourceDetails.credentials, function (err, decryptedCredentials) {
                             if (err) {
                                 logger.error("unable to decrypt credentials", err);
                                 var timeStampEnded = new Date().getTime();
@@ -186,336 +222,327 @@ commonService.bootStrappingResource = function bootStrappingResource(resourceDet
                                 });
                                 var queryObj = {
                                     'resourceDetails.bootStrapState': 'failed',
-                                    'resourceDetails.credentials': instance.credentials,
                                     'category': 'managed'
                                 }
-                                resourceModel.updateResourceById(resourceId, queryObj, function (err, data) {
+                                resourceModel.updateResourceById(resourceDetails.id, queryObj, function (err, data) {
                                     if (err) {
                                         logger.error("Error in updating Resource Authentication : " + err)
                                     }
                                     return;
                                 });
                             } else {
-                                var infraManager;
-                                var bootstrapOption;
-                                var deleteOptions;
-                                if (serverDetails.configType === 'chef') {
-                                    logger.debug('In chef ');
-                                    infraManager = new Chef({
-                                        userChefRepoLocation: serverDetails.chefRepoLocation,
-                                        chefUserName: serverDetails.loginname,
-                                        chefUserPemFile: serverDetails.userpemfile,
-                                        chefValidationPemFile: serverDetails.validatorpemfile,
-                                        hostedChefUrl: serverDetails.url
-                                    });
-                                    bootstrapOption = {
-                                        instanceIp: resources.resourceDetails.publicIp,
-                                        pemFilePath: decryptedCredentials.pemFileLocation,
-                                        instancePassword: decryptedCredentials.password,
-                                        instanceUsername: resources.credentials.username,
-                                        nodeName: resources.configDetails.nodeName,
-                                        environment: resources.masterDetails.envName,
-                                        instanceOS: resources.resourceDetails.hardware.os
-                                    };
-                                    if (resources.monitor && resources.monitor.parameters.transportProtocol === 'rabbitmq') {
-                                        var sensuCookBooks = masterUtil.getSensuCookbooks();
-                                        var runlist = sensuCookBooks;
-                                        var jsonAttributes = {};
-                                        jsonAttributes['sensu-client'] = masterUtil.getSensuCookbookAttributes(resources.monitor, resourceId);
-                                        bootstrapOption['runlist'] = runlist;
-                                        bootstrapOption['jsonAttributes'] = jsonAttributes;
-                                    }
-                                    deleteOptions = {
-                                        privateKey: decryptedCredentials.pemFileLocation,
-                                        username: decryptedCredentials.username,
-                                        host: resources.resourceDetails.publicIp,
-                                        instanceOS: resources.resourceDetails.hardware.os,
-                                        port: 22,
-                                        cmds: ["rm -rf /etc/chef/", "rm -rf /var/chef/"],
-                                        cmdswin: ["del "]
-                                    }
-                                    if (decryptedCredentials.pemFileLocation) {
-                                        deleteOptions.privateKey = decryptedCredentials.pemFileLocation;
-                                    } else {
-                                        deleteOptions.password = decryptedCredentials.password;
-                                    }
-                                } else {
-                                    var puppetSettings = {
-                                        host: serverDetails.hostname,
-                                        username: serverDetails.username
-                                    };
-                                    if (serverDetails.pemFileLocation) {
-                                        puppetSettings.pemFileLocation = serverDetails.pemFileLocation;
-                                    } else {
-                                        puppetSettings.password = serverDetails.puppetpassword;
-                                    }
-                                    logger.debug('puppet pemfile ==> ' + puppetSettings.pemFileLocation);
-                                    bootstrapOption = {
-                                        host: resources.resourceDetails.publicIp,
-                                        username: resources.credentials.username,
-                                        pemFileLocation: decryptedCredentials.pemFileLocation,
-                                        password: decryptedCredentials.password,
-                                        environment: resources.masterDetails.envName
-                                    };
-                                    var deleteOptions = {
-                                        username: decryptedCredentials.username,
-                                        host: resources.resourceDetails.publicIp,
-                                        port: 22
-                                    }
-                                    if (decryptedCredentials.pemFileLocation) {
-                                        deleteOptions.pemFileLocation = decryptedCredentials.pemFileLocation;
-                                    } else {
-                                        deleteOptions.password = decryptedCredentials.password;
-                                    }
-                                    infraManager = new Puppet(puppetSettings);
-                                }
-                                infraManager.cleanClient(deleteOptions, function (err, retCode) {
-                                    logger.debug("Entering chef.bootstarp");
-                                    infraManager.bootstrapInstance(bootstrapOption, function (err, code, bootstrapData) {
-                                        if (err) {
-                                            logger.error("knife launch err ==>", err);
-                                            if (err.message) {
-                                                var timeStampEnded = new Date().getTime();
-                                                logsDao.insertLog({
-                                                    instanceId: resourceDetails.id,
-                                                    instanceRefId: resourceDetails.actionId,
-                                                    botId: resourceDetails.botId,
-                                                    botRefId: resourceDetails.actionLogId,
-                                                    err: true,
-                                                    log: err.message,
-                                                    timestamp: timeStampEnded
-                                                });
-                                            } else {
-                                                var timeStampEnded = new Date().getTime();
-                                                logsDao.insertLog({
-                                                    instanceId: resourceDetails.id,
-                                                    instanceRefId: resourceDetails.actionId,
-                                                    botId: resourceDetails.botId,
-                                                    botRefId: resourceDetails.actionLogId,
-                                                    err: true,
-                                                    log: "Bootstrap Failed",
-                                                    timestamp: timeStampEnded
-                                                });
-                                            }
-                                            var queryObj = {
-                                                'resourceDetails.bootStrapState': 'failed',
-                                                'category': 'managed'
-                                            }
-                                            resourceModel.updateResourceById(resourceId, queryObj, function (err, data) {
-                                                if (err) {
-                                                    logger.error("Error in updating Resource Authentication : " + err)
-                                                }
-                                                saeService.serviceMapSync(function (err, data) {
-                                                    if (err) {
-                                                        logger.error("Error in starting Service Map:");
-                                                    }
-                                                });
+                                var filePath = appConfig.instancePemFilesDir + uuid.v4();
+                                fs.writeFile(filePath, decryptedCredentials.pemFileData, {
+                                }, function(err) {
+                                    if (err) {
+                                        logger.debug(err);
+                                        callback(err, null);
+                                        return;
+                                    }else {
+                                        var infraManager;
+                                        var bootstrapOption;
+                                        var deleteOptions;
+                                        if (serverDetails.configType === 'chef') {
+                                            logger.debug('In chef ');
+                                            infraManager = new Chef({
+                                                userChefRepoLocation: serverDetails.chefRepoLocation,
+                                                chefUserName: serverDetails.loginname,
+                                                chefUserPemFile: serverDetails.userpemfile,
+                                                chefValidationPemFile: serverDetails.validatorpemfile,
+                                                hostedChefUrl: serverDetails.url
                                             });
+                                            bootstrapOption = {
+                                                instanceIp: resources.resourceDetails.publicIp,
+                                                pemFilePath: filePath,
+                                                instancePassword: decryptedCredentials.password,
+                                                instanceUsername: resources.resourceDetails.credentials.username,
+                                                nodeName: resources.configDetails.nodeName,
+                                                environment: resources.masterDetails.envName,
+                                                instanceOS: resources.resourceDetails.os
+                                            };
+                                            if (resources.monitor && resources.monitor.parameters.transportProtocol === 'rabbitmq') {
+                                                var sensuCookBooks = masterUtil.getSensuCookbooks();
+                                                var runlist = sensuCookBooks;
+                                                var jsonAttributes = {};
+                                                jsonAttributes['sensu-client'] = masterUtil.getSensuCookbookAttributes(resources.monitor, resourceDetails.id);
+                                                bootstrapOption['runlist'] = runlist;
+                                                bootstrapOption['jsonAttributes'] = jsonAttributes;
+                                            }
+                                            deleteOptions = {
+                                                privateKey: decryptedCredentials.pemFileData,
+                                                username: decryptedCredentials.username,
+                                                host: resources.resourceDetails.publicIp,
+                                                instanceOS: resources.resourceDetails.os,
+                                                port: 22,
+                                                cmds: ["rm -rf /etc/chef/", "rm -rf /var/chef/"],
+                                                cmdswin: ["del "]
+                                            }
+                                            if (decryptedCredentials.pemFileData) {
+                                                deleteOptions.privateKey = decryptedCredentials.pemFileData;
+                                            } else {
+                                                deleteOptions.password = decryptedCredentials.password;
+                                            }
                                         } else {
-                                            if (code == 0) {
-                                                var nodeName;
-                                                if (bootstrapData && bootstrapData.puppetNodeName) {
-                                                    resourceModel.updateResourceById(resourceId, {'configdetails.id': bootstrapData.puppetNodeName}, function (err, updateData) {
+                                            var puppetSettings = {
+                                                host: serverDetails.hostname,
+                                                username: serverDetails.username
+                                            };
+                                            if (serverDetails.pemFileLocation) {
+                                                puppetSettings.pemFileLocation = serverDetails.pemFileLocation;
+                                            } else {
+                                                puppetSettings.password = serverDetails.puppetpassword;
+                                            }
+                                            logger.debug('puppet pemfile ==> ' + puppetSettings.pemFileLocation);
+                                            bootstrapOption = {
+                                                host: resources.resourceDetails.publicIp,
+                                                username: resources.resourceDetails.credentials.username,
+                                                pemFileData: decryptedCredentials.pemFileData,
+                                                password: decryptedCredentials.password,
+                                                environment: resources.masterDetails.envName
+                                            };
+                                            var deleteOptions = {
+                                                username: decryptedCredentials.username,
+                                                host: resources.resourceDetails.publicIp,
+                                                port: 22
+                                            }
+                                            if (decryptedCredentials.pemFileData) {
+                                                deleteOptions.pemFileData = decryptedCredentials.pemFileData;
+                                            } else {
+                                                deleteOptions.password = decryptedCredentials.password;
+                                            }
+                                            infraManager = new Puppet(puppetSettings);
+                                        }
+                                        infraManager.cleanClient(deleteOptions, function (err, retCode) {
+                                            logger.debug("Entering chef.bootstarp");
+                                            infraManager.bootstrapInstance(bootstrapOption, function (err, code, bootstrapData) {
+                                                if (err) {
+                                                    logger.error("knife launch err ==>", err);
+                                                    if (err.message) {
+                                                        var timeStampEnded = new Date().getTime();
+                                                        logsDao.insertLog({
+                                                            instanceId: resourceDetails.id,
+                                                            instanceRefId: resourceDetails.actionId,
+                                                            botId: resourceDetails.botId,
+                                                            botRefId: resourceDetails.actionLogId,
+                                                            err: true,
+                                                            log: err.message,
+                                                            timestamp: timeStampEnded
+                                                        });
+                                                    } else {
+                                                        var timeStampEnded = new Date().getTime();
+                                                        logsDao.insertLog({
+                                                            instanceId: resourceDetails.id,
+                                                            instanceRefId: resourceDetails.actionId,
+                                                            botId: resourceDetails.botId,
+                                                            botRefId: resourceDetails.actionLogId,
+                                                            err: true,
+                                                            log: "Bootstrap Failed",
+                                                            timestamp: timeStampEnded
+                                                        });
+                                                    }
+                                                    var queryObj = {
+                                                        'resourceDetails.bootStrapState': 'failed',
+                                                        'category': 'managed'
+                                                    }
+                                                    resourceModel.updateResourceById(resourceDetails.id, queryObj, function (err, data) {
                                                         if (err) {
-                                                            logger.error("Unable to set puppet node name");
-                                                        } else {
-                                                            logger.debug("puppet node name updated successfully");
+                                                            logger.error("Error in updating Resource Authentication : " + err)
                                                         }
+                                                        saeService.serviceMapSync(function (err, data) {
+                                                            if (err) {
+                                                                logger.error("Error in starting Service Map:");
+                                                            }
+                                                        });
                                                     });
-                                                    nodeName = bootstrapData.puppetNodeName;
                                                 } else {
-                                                    nodeName = resources.configDetails.nodeName;
+                                                    if (code == 0) {
+                                                        var nodeName;
+                                                        if (bootstrapData && bootstrapData.puppetNodeName) {
+                                                            resourceModel.updateResourceById(resourceDetails.id, {'configdetails.id': bootstrapData.puppetNodeName}, function (err, updateData) {
+                                                                if (err) {
+                                                                    logger.error("Unable to set puppet node name");
+                                                                } else {
+                                                                    logger.debug("puppet node name updated successfully");
+                                                                }
+                                                            });
+                                                            nodeName = bootstrapData.puppetNodeName;
+                                                        } else {
+                                                            nodeName = resources.configDetails.nodeName;
+                                                        }
+                                                        var timeStampEnded = new Date().getTime();
+                                                        logsDao.insertLog({
+                                                            instanceId: resourceDetails.id,
+                                                            instanceRefId: resourceDetails.actionId,
+                                                            botId: resourceDetails.botId,
+                                                            botRefId: resourceDetails.actionLogId,
+                                                            err: false,
+                                                            log: "Instance Bootstrapped Successfully",
+                                                            timestamp: timeStampEnded
+                                                        });
+                                                        var queryObj = {
+                                                            'resourceDetails.bootStrapState': 'success',
+                                                            'resourceDetails.state': 'running',
+                                                            'category': 'managed'
+                                                        }
+                                                        resourceModel.updateResourceById(resourceDetails.id, queryObj, function (err, data) {
+                                                            if (err) {
+                                                                logger.error("Error in updating Resource Authentication : " + err)
+                                                            }
+                                                            saeService.serviceMapSync(function (err, data) {
+                                                                if (err) {
+                                                                    logger.error("Error in starting Service Map:");
+                                                                }
+                                                            });
+                                                        });
+                                                        var hardwareData = {};
+                                                        if (bootstrapData && bootstrapData.puppetNodeName) {
+                                                            var runOptions = {
+                                                                username: decryptedCredentials.username,
+                                                                host: resources.resourceDetails.publicIp,
+                                                                port: 22,
+                                                            }
+                                                            if (decryptedCredentials.pemFileData) {
+                                                                runOptions.pemFileData = decryptedCredentials.pemFileData;
+                                                            } else {
+                                                                runOptions.password = decryptedCredentials.password;
+                                                            }
+                                                            infraManager.runClient(runOptions, function (err, retCode) {
+                                                                if (err) {
+                                                                    logger.error("Unable to run puppet client", err);
+                                                                    return;
+                                                                }
+                                                                setTimeout(function () {
+                                                                    infraManager.getNode(nodeName, function (err, nodeData) {
+                                                                        if (err) {
+                                                                            logger.error(err);
+                                                                            return;
+                                                                        }
+                                                                        hardwareData.architecture = nodeData.facts.values.hardwaremodel;
+                                                                        hardwareData.platform = nodeData.facts.values.operatingsystem;
+                                                                        hardwareData.platformVersion = nodeData.facts.values.operatingsystemrelease;
+                                                                        hardwareData.memory = {
+                                                                            total: 'unknown',
+                                                                            free: 'unknown'
+                                                                        };
+                                                                        hardwareData.memory.total = nodeData.facts.values.memorysize;
+                                                                        hardwareData.memory.free = nodeData.facts.values.memoryfree;
+                                                                        hardwareData.os = resources.resourceDetails.hardware.os;
+                                                                        var queryObj = {
+                                                                            'resourceDetails.hardware': hardwareData
+                                                                        }
+                                                                        resourceModel.updateResourceById(resourceDetails.id, queryObj, function (err, data) {
+                                                                            if (err) {
+                                                                                logger.error("Error in updating Resource Authentication : " + err)
+                                                                            }
+                                                                        });
+                                                                    });
+                                                                }, 30000);
+                                                            });
+
+                                                        } else {
+                                                            infraManager.getNode(nodeName, function (err, nodeData) {
+                                                                if (err) {
+                                                                    logger.error(err);
+                                                                    return;
+                                                                }
+                                                                hardwareData.architecture = nodeData.automatic.kernel.machine;
+                                                                hardwareData.platform = nodeData.automatic.platform;
+                                                                hardwareData.platformVersion = nodeData.automatic.platform_version;
+                                                                hardwareData.memory = {
+                                                                    total: 'unknown',
+                                                                    free: 'unknown'
+                                                                };
+                                                                if (nodeData.automatic.memory) {
+                                                                    hardwareData.memory.total = nodeData.automatic.memory.total;
+                                                                    hardwareData.memory.free = nodeData.automatic.memory.free;
+                                                                }
+                                                                hardwareData.os = resources.resourceDetails.hardware.os
+                                                                var queryObj = {
+                                                                    'resourceDetails.hardware': hardwareData
+                                                                }
+                                                                resourceModel.updateResourceById(resourceDetails.id, queryObj, function (err, data) {
+                                                                    if (err) {
+                                                                        logger.error("Error in updating Resource Authentication : " + err)
+                                                                    }
+                                                                });
+                                                            });
+                                                        }
+                                                        var _docker = new Docker();
+                                                        _docker.checkDockerStatus(resourceDetails.id, function (err, retCode) {
+                                                            if (err) {
+                                                                logger.error("Failed _docker.checkDockerStatus", err);
+                                                                return;
+                                                            }
+                                                            logger.debug('Docker Check Returned:' + retCode);
+                                                            if (retCode == '0') {
+                                                                var queryObj = {
+                                                                    'resourceDetails.dockerEngineState': 'success'
+                                                                }
+                                                                resourceModel.updateResourceById(resourceDetails.id, queryObj, function (err, data) {
+                                                                    if (err) {
+                                                                        logger.error("Error in updating Resource Authentication : " + err)
+                                                                    }
+                                                                });
+                                                            }
+                                                        });
+
+                                                    } else {
+                                                        var timeStampEnded = new Date().getTime();
+                                                        logsDao.insertLog({
+                                                            instanceId: resourceDetails.id,
+                                                            instanceRefId: resourceDetails.actionId,
+                                                            botId: resourceDetails.botId,
+                                                            botRefId: resourceDetails.actionLogId,
+                                                            err: true,
+                                                            log: "Bootstrap Failed",
+                                                            timestamp: timeStampEnded
+                                                        });
+                                                        var queryObj = {
+                                                            'resourceDetails.bootStrapState': 'failed',
+                                                            'resourceDetails.state': 'failed',
+                                                            'category': 'managed'
+                                                        }
+                                                        resourceModel.updateResourceById(resourceDetails.id, queryObj, function (err, data) {
+                                                            if (err) {
+                                                                logger.error("Error in updating Resource Authentication : " + err)
+                                                            }
+                                                            saeService.serviceMapSync(function (err, data) {
+                                                                if (err) {
+                                                                    logger.error("Error in starting Service Map:");
+                                                                }
+                                                            });
+                                                        });
+                                                    }
                                                 }
-                                                var timeStampEnded = new Date().getTime();
+
+                                            }, function (stdOutData) {
                                                 logsDao.insertLog({
                                                     instanceId: resourceDetails.id,
                                                     instanceRefId: resourceDetails.actionId,
                                                     botId: resourceDetails.botId,
                                                     botRefId: resourceDetails.actionLogId,
                                                     err: false,
-                                                    log: "Instance Bootstrapped Successfully",
-                                                    timestamp: timeStampEnded
+                                                    log: stdOutData.toString('ascii'),
+                                                    timestamp: new Date().getTime()
                                                 });
-                                                var queryObj = {
-                                                    'resourceDetails.bootStrapState': 'success',
-                                                    'resourceDetails.state': 'running',
-                                                    'category': 'managed'
-                                                }
-                                                resourceModel.updateResourceById(resourceId, queryObj, function (err, data) {
-                                                    if (err) {
-                                                        logger.error("Error in updating Resource Authentication : " + err)
-                                                    }
-                                                    saeService.serviceMapSync(function (err, data) {
-                                                        if (err) {
-                                                            logger.error("Error in starting Service Map:");
-                                                        }
-                                                    });
-                                                });
-                                                var hardwareData = {};
-                                                if (bootstrapData && bootstrapData.puppetNodeName) {
-                                                    var runOptions = {
-                                                        username: decryptedCredentials.username,
-                                                        host: resources.resourceDetails.publicIp,
-                                                        port: 22,
-                                                    }
-                                                    if (decryptedCredentials.pemFileLocation) {
-                                                        runOptions.pemFileLocation = decryptedCredentials.pemFileLocation;
-                                                    } else {
-                                                        runOptions.password = decryptedCredentials.password;
-                                                    }
-                                                    infraManager.runClient(runOptions, function (err, retCode) {
-                                                        if (decryptedCredentials.pemFileLocation) {
-                                                            fileIo.removeFile(decryptedCredentials.pemFileLocation, function (err) {
-                                                                if (err) {
-                                                                    logger.debug("Unable to delete temp pem file =>", err);
-                                                                } else {
-                                                                    logger.debug("temp pem file deleted =>", err);
-                                                                }
-                                                            });
-                                                        }
-                                                        if (err) {
-                                                            logger.error("Unable to run puppet client", err);
-                                                            return;
-                                                        }
-                                                        setTimeout(function () {
-                                                            infraManager.getNode(nodeName, function (err, nodeData) {
-                                                                if (err) {
-                                                                    logger.error(err);
-                                                                    return;
-                                                                }
-                                                                hardwareData.architecture = nodeData.facts.values.hardwaremodel;
-                                                                hardwareData.platform = nodeData.facts.values.operatingsystem;
-                                                                hardwareData.platformVersion = nodeData.facts.values.operatingsystemrelease;
-                                                                hardwareData.memory = {
-                                                                    total: 'unknown',
-                                                                    free: 'unknown'
-                                                                };
-                                                                hardwareData.memory.total = nodeData.facts.values.memorysize;
-                                                                hardwareData.memory.free = nodeData.facts.values.memoryfree;
-                                                                hardwareData.os = resources.resourceDetails.hardware.os;
-                                                                var queryObj = {
-                                                                    'resourceDetails.hardware': hardwareData
-                                                                }
-                                                                resourceModel.updateResourceById(resourceId, queryObj, function (err, data) {
-                                                                    if (err) {
-                                                                        logger.error("Error in updating Resource Authentication : " + err)
-                                                                    }
-                                                                });
-                                                            });
-                                                        }, 30000);
-                                                    });
-
-                                                } else {
-                                                    infraManager.getNode(nodeName, function (err, nodeData) {
-                                                        if (err) {
-                                                            logger.error(err);
-                                                            return;
-                                                        }
-                                                        hardwareData.architecture = nodeData.automatic.kernel.machine;
-                                                        hardwareData.platform = nodeData.automatic.platform;
-                                                        hardwareData.platformVersion = nodeData.automatic.platform_version;
-                                                        hardwareData.memory = {
-                                                            total: 'unknown',
-                                                            free: 'unknown'
-                                                        };
-                                                        if (nodeData.automatic.memory) {
-                                                            hardwareData.memory.total = nodeData.automatic.memory.total;
-                                                            hardwareData.memory.free = nodeData.automatic.memory.free;
-                                                        }
-                                                        hardwareData.os = resources.resourceDetails.hardware.os
-                                                        var queryObj = {
-                                                            'resourceDetails.hardware': hardwareData
-                                                        }
-                                                        resourceModel.updateResourceById(resourceId, queryObj, function (err, data) {
-                                                            if (err) {
-                                                                logger.error("Error in updating Resource Authentication : " + err)
-                                                            }
-                                                        });
-                                                        if (decryptedCredentials.pemFilePath) {
-                                                            fileIo.removeFile(decryptedCredentials.pemFilePath, function (err) {
-                                                                if (err) {
-                                                                    logger.error("Unable to delete temp pem file =>", err);
-                                                                } else {
-                                                                    logger.debug("temp pem file deleted");
-                                                                }
-                                                            });
-                                                        }
-                                                    });
-                                                }
-                                                var _docker = new Docker();
-                                                _docker.checkDockerStatus(resourceId, function (err, retCode) {
-                                                    if (err) {
-                                                        logger.error("Failed _docker.checkDockerStatus", err);
-                                                        return;
-                                                    }
-                                                    logger.debug('Docker Check Returned:' + retCode);
-                                                    if (retCode == '0') {
-                                                        var queryObj = {
-                                                            'resourceDetails.dockerEngineState': 'success'
-                                                        }
-                                                        resourceModel.updateResourceById(resourceId, queryObj, function (err, data) {
-                                                            if (err) {
-                                                                logger.error("Error in updating Resource Authentication : " + err)
-                                                            }
-                                                        });
-                                                    }
-                                                });
-
-                                            } else {
-                                                var timeStampEnded = new Date().getTime();
+                                            }, function (stdErrData) {
                                                 logsDao.insertLog({
                                                     instanceId: resourceDetails.id,
                                                     instanceRefId: resourceDetails.actionId,
                                                     botId: resourceDetails.botId,
                                                     botRefId: resourceDetails.actionLogId,
                                                     err: true,
-                                                    log: "Bootstrap Failed",
-                                                    timestamp: timeStampEnded
+                                                    log: stdErrData.toString('ascii'),
+                                                    timestamp: new Date().getTime()
                                                 });
-                                                var queryObj = {
-                                                    'resourceDetails.bootStrapState': 'failed',
-                                                    'resourceDetails.state': 'failed',
-                                                    'category': 'managed'
-                                                }
-                                                resourceModel.updateResourceById(resourceId, queryObj, function (err, data) {
-                                                    if (err) {
-                                                        logger.error("Error in updating Resource Authentication : " + err)
-                                                    }
-                                                    saeService.serviceMapSync(function (err, data) {
-                                                        if (err) {
-                                                            logger.error("Error in starting Service Map:");
-                                                        }
-                                                    });
-                                                });
-                                            }
-                                        }
-
-                                    }, function (stdOutData) {
-                                        logsDao.insertLog({
-                                            instanceId: resourceDetails.id,
-                                            instanceRefId: resourceDetails.actionId,
-                                            botId: resourceDetails.botId,
-                                            botRefId: resourceDetails.actionLogId,
-                                            err: false,
-                                            log: stdOutData.toString('ascii'),
-                                            timestamp: new Date().getTime()
+                                            });
                                         });
-                                    }, function (stdErrData) {
-                                        logsDao.insertLog({
-                                            instanceId: resourceDetails.id,
-                                            instanceRefId: resourceDetails.actionId,
-                                            botId: resourceDetails.botId,
-                                            botRefId: resourceDetails.actionLogId,
-                                            err: true,
-                                            log: stdErrData.toString('ascii'),
-                                            timestamp: new Date().getTime()
+                                        callback(null, {
+                                            code: 200,
+                                            message: "Instance BootStrapped : " + resources.resourceDetails.platformId
                                         });
-                                    });
-                                });
-                                callback(null, {
-                                    code: 200,
-                                    message: "Instance BootStrapped : " + resources.resourceDetails.platformId
-                                });
+                                    }
+                                })
                             }
                         });
                     });
@@ -524,7 +551,7 @@ commonService.bootStrappingResource = function bootStrappingResource(resourceDet
         }else{
             var err =  new Error();
             err.code = 500;
-            err.message = "No Resource is available in DB against Id "+resourceId;
+            err.message = "No Resource is available in DB against Id "+resourceDetails.id;
             return callback(err,null);
         }
     })
@@ -564,7 +591,7 @@ commonService.bootstrapInstance = function bootstrapInstance(resourceId,callback
                 var queryObj = {
                     'resourceDetails.bootStrapState': 'success',
                     'resourceDetails.state': 'running',
-                    'resourceDetails.credentials': encryptedCredentials,
+                    'configDetails.type':'chef',
                     'category': 'managed'
                 }
                 resourceModel.updateResourceById(resource._id, queryObj, function (err, data) {

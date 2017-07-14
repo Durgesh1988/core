@@ -40,7 +40,7 @@ var Docker = function() {
                         host: instanceOptions.resourceDetails.publicIp,
                         port: '22',
                         username: decryptedCredentials.username, //'ec2-user',
-                        privateKey: decryptedCredentials.pemFileLocation, //'/development/catalyst/D4DFE/D4D/config/catalyst.pem'
+                        privateKey: decryptedCredentials.pemFileData, //'/development/catalyst/D4DFE/D4D/config/catalyst.pem'
                         password: decryptedCredentials.password
                     };
                     var sshParamObj = {
@@ -71,7 +71,7 @@ var Docker = function() {
     }
 
     this.checkDockerStatus = function(resourceId, callback, callbackOnStdOut, callbackOnStdErr) {
-        logger.debug(instanceid);
+        logger.debug(resourceId);
         var cmd = "sudo docker ps";
         resourceModel.getResourceById(resourceId, function(err, data) {
             if (err) {
@@ -90,7 +90,7 @@ var Docker = function() {
                         host: instanceOptions.resourceDetails.publicIp,
                         port: '22',
                         username: decryptedCredentials.username,
-                        privateKey: decryptedCredentials.pemFileLocation,
+                        privateKey: decryptedCredentials.pemFileData,
                         password: decryptedCredentials.password
                     };
 

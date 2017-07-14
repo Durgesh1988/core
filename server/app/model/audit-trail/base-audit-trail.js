@@ -102,11 +102,6 @@ var AuditTrailSchema = function AuditTrail() {
             trim:true,
             required:false
         },
-        providerType: {
-            type: String,
-            trim:true,
-            required:false
-        },
         action: {
             type: String,
             trim:true,

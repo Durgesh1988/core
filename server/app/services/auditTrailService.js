@@ -55,7 +55,6 @@ auditTrailService.insertAuditTrail = function insertAuditTrail(auditDetails,audi
         actionStatus: actionObj.actionStatus,
         user: actionObj.catUser,
         startedOn: new Date().getTime(),
-        providerType: auditDetails.providerType?auditDetails.providerType:auditDetails.providerDetails.type,
         action: actionObj.action
     };
     if(actionObj.auditType === 'BOTOLD' || actionObj.auditType === 'BOT'){
