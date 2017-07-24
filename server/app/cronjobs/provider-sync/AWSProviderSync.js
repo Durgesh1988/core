@@ -7,15 +7,12 @@ var async = require('async');
 var resourceService = require('_pr/services/resourceService');
 var resourceModel = require('_pr/model/resources/resources');
 var tagsModel = require('_pr/model/tags');
-var instanceService = require('_pr/services/instanceService');
 var commonService = require('_pr/services/commonService');
 var noticeService = require('_pr/services/noticeService.js');
 var saeService = require('_pr/services/saeService.js');
 var credentialCryptography = require('_pr/lib/credentialcryptography');
 var chefDao = require('_pr/model/dao/chefDao.js');
 var apiUtil = require('_pr/lib/utils/apiUtil.js');
-
-
 
 var AWSRDSS3ProviderSync = Object.create(CatalystCronJob);
 AWSRDSS3ProviderSync.execute = awsRDSS3ProviderSync;

@@ -18,9 +18,7 @@ var CatalystCronJob = require('_pr/cronjobs/CatalystCronJob');
 var AWSProvider = require('_pr/model/classes/masters/cloudprovider/awsCloudProvider.js');
 var MasterUtils = require('_pr/lib/utils/masterUtil.js');
 var appConfig = require('_pr/config');
-var instancesModel = require('_pr/model/classes/instance/instance');
 var resourceMetricsModel = require('_pr/model/resource-metrics');
-var instanceService = require('_pr/services/instanceService');
 var async = require('async');
 var resourceService = require('_pr/services/resourceService');
 var resources = require('_pr/model/resources/resources');
@@ -107,14 +105,7 @@ function initialize(){
 function aggregateEC2UsageForProvider(provider, startTime, endTime, period) {
     async.waterfall([
         function (next) {
-            logger.info('AWS Service usage aggregation for provider: ' + provider._id + ' started');
-            instanceService.getTrackedInstancesForProvider(provider, next);
-        },
-        function (provider, instances, next) {
         	async.parallel({
-                managed: function (callback) {
-                    generateEC2UsageMetricsForProvider(provider, instances.managed, startTime, endTime, period, callback);
-                },
                 ec2UsageMetrics: function (callback) {
                     generateEC2UsageMetricsForProvider(provider,null, startTime, endTime, period, callback);
                 },
@@ -134,9 +125,6 @@ function aggregateEC2UsageForProvider(provider, startTime, endTime, period) {
         },
         function (usageMetrics, next) {
             async.parallel({
-                managed: function (callback) {
-                    updateManagedInstanceUsage(usageMetrics.managed, callback);
-                },
                 ec2UsageMetrics: function (callback) {
                     updateResourceUsage(usageMetrics.ec2UsageMetrics, callback);
                 },
@@ -288,40 +276,6 @@ function saveResourceUsageMetrics (resourceMetrics, next) {
         })(i);
     };
 }
-
-// @TODO Resource abstraction to be redefined to include all instances, to reduce code duplication
-/**
- *
- * @param instanceUsageMetrics
- * @param next
- */
-function updateManagedInstanceUsage(instanceUsageMetrics, next) {
-    var results = [];
-    if(instanceUsageMetrics.length == 0)
-        return next(null, results);
-    for(var i = 0; i < instanceUsageMetrics.length; i++) {
-        (function (j) {
-            formatUsageData(instanceUsageMetrics[j], function(err, formattedUsageMetrics) {
-                if (err) {
-                    next(err);
-                } else {
-                    instancesModel.updateInstanceUsage(formattedUsageMetrics.resourceId,
-                        formattedUsageMetrics.metrics, function (err, result) {
-                            if (err)
-                                next(err);
-                            else
-                                results.push(result);
-
-                            if (results.length == instanceUsageMetrics.length)
-                                next(null, results);
-                        }
-                    );
-                }
-            });
-        })(i);
-    };
-}
-
 
 function updateResourceUsage(resourcesUsageMetrics,next){
     var results = [];

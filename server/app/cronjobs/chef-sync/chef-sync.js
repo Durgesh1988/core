@@ -7,7 +7,6 @@ var Chef = require('_pr/lib/chef');
 var chefDao = require('_pr/model/dao/chefDao.js');
 var appConfig = require('_pr/config');
 var resources = require('_pr/model/resources/resources.js');
-var instancesDao = require('_pr/model/classes/instance/instance');
 var serviceMapService = require('_pr/services/serviceMapService.js');
 var ChefSync = Object.create(CatalystCronJob);
 ChefSync.interval = '*/2 * * * *';
@@ -117,24 +116,6 @@ function chefSyncWithChefNodes(nodeDetailList,callback){
                                 async.parallel({
                                     chefDelete: function(callback){
                                         chefDao.removeTerminatedChefNodes({name:chefNode.name,isDeleted:false},callback);
-                                    },
-                                    instanceDelete: function(callback){
-                                        var query = {
-                                            $or: [{
-                                                instanceIP: chefNode.ip
-                                            },
-                                                {
-                                                    privateIpAddress: chefNode.ip
-                                                },
-                                                {
-                                                    chefNodeName: chefNode.name
-                                                },
-                                                {
-                                                    platformId: chefNode.platformId
-                                                }],
-                                            isDeleted:false
-                                        }
-                                        instancesDao.updateInstanceByFilter(query,{isDeleted:true},callback);
                                     },
                                     resourceDelete: function(callback){
                                         var query = {

@@ -1,5 +1,5 @@
 var logger = require('_pr/logger')(module);
-var instancesDao = require('_pr/model/classes/instance/instance');
+var resourceModel = require('_pr/model/resources/resources');
 var taskDao = require('_pr/model/classes/tasks/tasks.js');
 var botOld = require('_pr/model/bots/1.0/botOld.js');
 var botDao = require('_pr/model/bots/1.1/bot.js');
@@ -11,7 +11,7 @@ var catalystSync = module.exports = {};
 
 catalystSync.executeScheduledInstances = function executeScheduledInstances() {
     logger.debug("Instance Scheduler is started. ");
-    instancesDao.getScheduledInstances(function(err, instances) {
+    resourceModel.getResources({isScheduled:true},function(err, instances) {
         if (err) {
             logger.error("Failed to fetch Instance: ", err);
             return;

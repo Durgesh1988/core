@@ -3,11 +3,11 @@ var logger = require('_pr/logger')(module);
 var CatalystCronJob = require('_pr/cronjobs/CatalystCronJob');
 var MasterUtils = require('_pr/lib/utils/masterUtil.js');
 var credentialCrpto = require('_pr/lib/credentialcryptography.js');
-var instancesDao = require('_pr/model/classes/instance/instance');
+var resources = require('_pr/model/resources/resources.js');
 var containerDao = require('_pr/model/container');
-var containerLogModel = require('_pr/model/log-trail/containerLog.js');
+var auditTrailService = require('_pr/services/auditTrailService');
 var SSH = require('_pr/lib/utils/sshexec');
-var fileIo = require('_pr/lib/utils/fileio');
+var uuid = require('uuid');
 var toPairs = require('lodash.topairs');
 var async = require('async');
 var logsDao = require('_pr/model/dao/logsdao.js');
@@ -26,7 +26,12 @@ function dockerContainerSync() {
         } else if (orgs.length > 0) {
             for (var i = 0; i < orgs.length; i++) {
                 (function (org) {
-                    instancesDao.getInstancesWithContainersByOrgId(org.rowid, function (err, instances) {
+                    var query = {
+                        'masterDetails.orgId': org.rowid,
+                        'isDeleted':false,
+                        'resourceDetails.dockerEngineState':'success'
+                    }
+                    resources.getResources(query, function (err, instances) {
                         if (err) {
                             logger.error(err);
                             return;
@@ -57,8 +62,8 @@ function dockerContainerSync() {
 
 
 function aggregateDockerContainerForInstance(instance){
-    logger.info("Docker Container Sync started for Instance IP "+instance.instanceIP);
-    if(instance.instanceState === 'terminated' || instance.instanceState === 'stopped'){
+    logger.info("Docker Container Sync started for Instance IP "+instance.resourceDetails.publicIp);
+    if(instance.resourceDetails.state === 'terminated' || instance.resourceDetails.state === 'stopped'){
         deleteContainerByInstanceId(instance,function(err,data){
             if(err){
                 logger.error(err);
@@ -72,14 +77,14 @@ function aggregateDockerContainerForInstance(instance){
         var cmd = 'echo -e \"GET /containers/json?all=1 HTTP/1.0\r\n\" | sudo nc -U /var/run/docker.sock';
         async.waterfall([
             function (next) {
-                credentialCrpto.decryptCredential(instance.credentials, next);
+                credentialCrpto.decryptCredential(instance.resourceDetails.credentials, next);
             },
             function (decryptedCredentials, next) {
                 var options = {
-                    host: instance.instanceIP,
+                    host: instance.resourceDetails.publicIp,
                     port: '22',
                     username: decryptedCredentials.username,
-                    privateKey: decryptedCredentials.pemFileLocation,
+                    privateKey: decryptedCredentials.pemFileData,
                     password: decryptedCredentials.password
                 };
                 var sshParamObj = {
@@ -98,36 +103,13 @@ function aggregateDockerContainerForInstance(instance){
                 var sshConnection = new SSH(sshParamObj);
                 var stdOut = '';
                 sshConnection.exec(cmd, function (err, code) {
-                    if (err) {
-                        if (decryptedCredentials.pemFileLocation) {
-                            fileIo.removeFile(decryptedCredentials.pemFileLocation, function () {
-                                logger.debug('temp file deleted');
-                                var containerObj={
-                                    instanceId:instance._id,
-                                    operation:'delete'
-                                }
-                                next(null,containerObj);
-                            });
-                        } else {
-                            var containerObj={
-                                instanceId:instance._id,
-                                operation:'delete'
-                            }
-                            next(null,containerObj);
-                        }
-                    };
-                    if (decryptedCredentials.pemFileLocation) {
-                        fileIo.removeFile(decryptedCredentials.pemFileLocation, function () {
-                            logger.debug('temp file deleted');
-                        });
-                    };
-                    if (code === -5000) {
+                    if (err || code === -5000) {
                         var containerObj={
                             instanceId:instance._id,
                             operation:'delete'
                         }
                         next(null,containerObj);
-                    } else {
+                    }else {
                         var _stdout = stdOut.split('\r\n');
                         var start = false;
                         var so = '';
@@ -148,12 +130,12 @@ function aggregateDockerContainerForInstance(instance){
                                             var containerName = container.Names[0].replace(/^\//, "");
                                             var status = dockerContainerStatus(container.Status.toString());
                                             var containerData = {
-                                                orgId: instance.orgId,
-                                                bgId: instance.bgId,
-                                                projectId: instance.projectId,
-                                                envId: instance.envId,
+                                                orgId: instance.masterDetails.orgId,
+                                                bgId: instance.masterDetails.bgId,
+                                                projectId: instance.masterDetails.projectId,
+                                                envId: instance.masterDetails.envId,
                                                 Id: container.Id,
-                                                instanceIP: instance.instanceIP,
+                                                instanceIP: instance.resourceDetails.publicIp,
                                                 instanceId: instance._id,
                                                 Names: containerName,
                                                 Image: container.Image,
@@ -168,7 +150,6 @@ function aggregateDockerContainerForInstance(instance){
                                             };
                                             containerList.push(containerData);
                                             containerIds.push(container.Id);
-                                            containerData = {};
                                         })(containers[i]);
                                     }
                                     if (containers.length === containerList.length) {
@@ -240,7 +221,6 @@ function saveAndUpdateContainers(containers,containerIds,instanceId,instance,nex
                                     if(err){
                                         logger.error(err);
                                         return;
-
                                     }else{
                                         count++;
                                         var containerStatus = container.Status;
@@ -262,37 +242,38 @@ function saveAndUpdateContainers(containers,containerIds,instanceId,instance,nex
                                         }
                                         var actionObj = 'Container-'+container.Names+'-Start';
                                         var timestampStarted = new Date().getTime();
-                                        var actionLog = instancesDao.insertDockerActionLog(instanceId, instance.catUser, actionObj, actionId, timestampStarted);
+                                        var actionLogId = uuid.v4();
                                         logsDao.insertLog({
                                             instanceId:instance._id,
-                                            instanceRefId:actionLog._id,
+                                            instanceRefId:actionLogId,
                                             err: false,
                                             log: logs,
                                             timestamp: timestampStarted
                                         });
                                         var containerLogs ={
-                                            actionId: actionLog._id,
+                                            actionId: actionLogId,
                                             containerId: container.Id,
-                                            orgName: instance.orgName,
-                                            orgId: instance.orgId,
-                                            bgName: instance.bgName,
-                                            bgId: instance.bgId,
-                                            projectName: instance.projectName,
-                                            envName: instance.environmentName,
-                                            envId: instance.envId,
+                                            orgName: instance.masterDetails.orgName,
+                                            orgId: instance.masterDetails.orgId,
+                                            bgName: instance.masterDetails.bgName,
+                                            bgId: instance.masterDetails.bgId,
+                                            projectName: instance.masterDetails.projectName,
+                                            projectId: instance.masterDetails.projectId,
+                                            envName: instance.masterDetails.envName,
+                                            envId: instance.masterDetails.envId,
                                             status: action,
                                             actionStatus: "success",
-                                            instanceIP:instance.instanceIP,
-                                            platformId: instance.platformId,
+                                            instanceIP:instance.resourceDetails.publicIp,
+                                            platformId: instance.resourceDetails.platformId,
                                             containerName: container.Names,
                                             Image: container.Image,
                                             ImageID: container.ImageID,
-                                            platform: instance.hardware.platform,
-                                            os: instance.hardware.os,
+                                            platform: instance.resourceDetails.hardware.platform,
+                                            os: instance.resourceDetails.hardware.os,
                                             user: instance.catUser,
                                             createdOn: new Date().getTime(),
                                             startedOn: new Date().getTime(),
-                                            providerType: instance.providerType ? instance.providerType:null,
+                                            providerType: instance.providerDetails.type ? instance.providerDetails.type:null,
                                             action: action
                                         };
                                         containerLogModel.createOrUpdate(containerLogs, function(err, logData){
@@ -300,7 +281,6 @@ function saveAndUpdateContainers(containers,containerIds,instanceId,instance,nex
                                             logger.error("Failed to create or update containerLog: ", err);
                                             }
                                         });
-                                        instancesDao.updateActionLog(instance._id, actionLog._id, true, new Date().getTime());
                                         if(count === containers.length){
                                             next(null,containers);
                                         }
@@ -355,44 +335,44 @@ function deleteContainerByInstanceId(instanceDetails,next){
                 containerList = containers;
                 containerDao.deleteContainerByInstanceId(instanceDetails._id,next);
             },
-        function(containers,next){
+            function(containers,next){
                 if(containerList.length > 0){
                     for(var i = 0; i < containerList.length;i++){
                         (function(container){
                             var timestampStarted = new Date().getTime();
+                            var actionId = uuid.v4();
                             var actionObj = 'Container-'+container.Names+'-Terminated';
-                            var actionLog = instancesDao.insertDockerActionLog(instanceDetails._id,instanceDetails.catUser , actionObj, 6, timestampStarted);
                             logsDao.insertLog({
                                 instanceId:instanceDetails._id,
-                                instanceRefId:actionLog._id,
+                                instanceRefId:actionId,
                                 err: false,
-                                log: "Docker-Container "+container.Names+" Terminated",
+                                log: actionObj,
                                 timestamp: timestampStarted
                             });
-
                             var containerLog ={
-                                actionId: actionLog._id,
+                                actionId: actionId,
                                 containerId: container.Id,
-                                orgName: instanceDetails.orgName,
-                                orgId: instanceDetails.orgId,
-                                bgName: instanceDetails.bgName,
-                                bgId: instanceDetails.bgId,
-                                projectName: instanceDetails.projectName,
-                                envName: instanceDetails.environmentName,
-                                envId: instanceDetails.envId,
+                                orgName: instanceDetails.masterDetails.orgName,
+                                orgId: instanceDetails.masterDetails.orgId,
+                                bgName: instanceDetails.masterDetails.bgName,
+                                bgId: instanceDetails.masterDetails.bgId,
+                                projectName: instanceDetails.masterDetails.projectName,
+                                projectId: instanceDetails.masterDetails.projectId,
+                                envName: instanceDetails.masterDetails.envName,
+                                envId: instanceDetails.masterDetails.envId,
                                 status: 'Terminated',
                                 actionStatus: "success",
-                                instanceIP:instanceDetails.instanceIP,
-                                platformId: instanceDetails.platformId,
+                                instanceIP:instanceDetails.resourceDetails.publicIp,
+                                platformId: instanceDetails.resourceDetails.platformId,
                                 containerName: container.Names,
                                 Image: container.Image,
                                 ImageID: container.ImageID,
-                                platform: instanceDetails.hardware.platform,
-                                os: instanceDetails.hardware.os,
+                                platform: instanceDetails.resourceDetails.hardware.platform,
+                                os: instanceDetails.resourceDetails.hardware.os,
                                 user: instanceDetails.catUser,
                                 createdOn: new Date().getTime(),
                                 startedOn: new Date().getTime(),
-                                providerType: instanceDetails.providerType ? instanceDetails.providerType:null,
+                                providerType: instanceDetails.providerDetails.type ? instanceDetails.providerDetails.type:null,
                                 action: 'Terminated'
                             };
 
@@ -402,7 +382,6 @@ function deleteContainerByInstanceId(instanceDetails,next){
                                 }
                                 count++;
                             });
-                            instancesDao.updateActionLog(instanceDetails._id, actionLog._id, true, new Date().getTime());
                             if(count === containers.length){
                                 next(null,containers);
                             }
