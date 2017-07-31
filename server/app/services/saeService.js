@@ -253,7 +253,7 @@ function saeAnalysis(service,callback) {
                                             }
                                         } else {
                                             var commonService = require('_pr/services/commonService');
-                                            commonService.syncChefNodeWithResources(chefNode, service, function (err, resourceData) {
+                                            commonService.syncNodeWithResource(chefNode, service, function (err, resourceData) {
                                                 if (err) {
                                                     logger.error("Error in syncing Chef Node with Resources: ", err);
                                                 }
@@ -332,7 +332,7 @@ function saeAnalysis(service,callback) {
                                         }
                                     } else {
                                         var commonService = require('_pr/services/commonService');
-                                        commonService.syncChefNodeWithResources(chefNode, service, function (err, resourceData) {
+                                        commonService.syncNodeWithResource(chefNode, service, function (err, resourceData) {
                                             if (err) {
                                                 logger.error("Error in syncing Chef Node with Resources: ", err);
                                             }

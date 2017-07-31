@@ -1558,52 +1558,177 @@ commonService.convertJson2Yml = function convertJson2Yml(reqBody,callback) {
     }
 }
 
-commonService.syncChefNodeWithResources = function syncChefNodeWithResources(chefNodeDetails,serviceDetails,callback) {
-    var resourceObj = {
-        name: chefNodeDetails.name,
-        category: 'unmanaged',
-        resourceType: chefNodeDetails.platformId && chefNodeDetails.platformId !== null ? 'EC2' : 'Instance',
-        masterDetails: {
-            orgId: serviceDetails.masterDetails.orgId,
-            orgName: serviceDetails.masterDetails.orgName,
-            bgId: serviceDetails.masterDetails.bgId,
-            bgName: serviceDetails.masterDetails.bgName,
-            projectId: serviceDetails.masterDetails.projectId,
-            projectName: serviceDetails.masterDetails.projectName,
-            envId: serviceDetails.masterDetails.envId,
-            envName: serviceDetails.masterDetails.envName
-        },
-        resourceDetails: {
-            platformId: chefNodeDetails.platformId && chefNodeDetails.platformId !== null ? chefNodeDetails.platformId : chefNodeDetails.name,
-            publicIp: chefNodeDetails.ip,
-            privateIp: chefNodeDetails.ip,
-            state: 'unknown',
-            bootStrapState: 'success',
-            hardware: chefNodeDetails.hardware,
-            hostName: chefNodeDetails.fqdn
-        },
-        configDetails: {
-            id: chefNodeDetails.serverId,
-            nodeName: chefNodeDetails.name,
-            run_list: chefNodeDetails.run_list
-        },
-        tagServer: serviceDetails.masterDetails.tagServer ? serviceDetails.masterDetails.tagServer : null,
-        monitor: serviceDetails.masterDetails.monitor ? serviceDetails.masterDetails.monitor : null,
-        blueprintData: {
-            blueprintName: chefNodeDetails.name,
-            templateName: "chef_import",
-        },
-        authentication: 'failed'
-    }
-    resourceObj.createdOn = new Date().getTime();
-    resourceModel.createNew(resourceObj, function (err, data) {
-        if (err) {
-            logger.error("Error in creating Resources>>>>:", err);
-            return callback(err, null);
-        } else {
-            return callback(null, data);
+commonService.syncNodeWithResource = function syncNodeWithResource(nodeDetails,serviceDetails,callback) {
+    if(serviceDetails !== null) {
+        var resourceObj = {
+            name: nodeDetails.name,
+            category: 'unmanaged',
+            resourceType: nodeDetails.platformId && nodeDetails.platformId !== null ? 'EC2' : 'Instance',
+            masterDetails: {
+                orgId: serviceDetails.masterDetails.orgId,
+                orgName: serviceDetails.masterDetails.orgName,
+                bgId: serviceDetails.masterDetails.bgId,
+                bgName: serviceDetails.masterDetails.bgName,
+                projectId: serviceDetails.masterDetails.projectId,
+                projectName: serviceDetails.masterDetails.projectName,
+                envId: serviceDetails.masterDetails.envId,
+                envName: serviceDetails.masterDetails.envName
+            },
+            resourceDetails: {
+                platformId: nodeDetails.platformId && nodeDetails.platformId !== null ? nodeDetails.platformId : nodeDetails.name,
+                publicIp: nodeDetails.ip,
+                privateIp: nodeDetails.ip,
+                state: 'unknown',
+                bootStrapState: 'success',
+                hardware: nodeDetails.hardware,
+                hostName: nodeDetails.fqdn
+            },
+            configDetails: {
+                id: nodeDetails.serverId,
+                nodeName: nodeDetails.name,
+                run_list: nodeDetails.run_list
+            },
+            tagServer: serviceDetails.masterDetails.tagServer ? serviceDetails.masterDetails.tagServer : null,
+            monitor: serviceDetails.masterDetails.monitor ? serviceDetails.masterDetails.monitor : null,
+            blueprintData: {
+                blueprintName: nodeDetails.name,
+                templateName: "chef_import",
+            },
+            authentication: 'failed'
         }
-    })
+        resourceObj.createdOn = new Date().getTime();
+        resourceModel.createNew(resourceObj, function (err, data) {
+            if (err) {
+                logger.error("Error in creating Resources>>>>:", err);
+                return callback(err, null);
+            } else {
+                return callback(null, data);
+            }
+        })
+    }else{
+        var resourceObj = {
+            name: nodeDetails.name,
+            category: 'managed',
+            masterDetails: {
+                orgId: nodeDetails.orgId,
+                orgName: nodeDetails.orgName,
+                bgId: nodeDetails.bgId,
+                bgName: nodeDetails.bgName,
+                projectId: nodeDetails.projectId,
+                projectName: nodeDetails.projectName,
+                envId: nodeDetails.envId,
+                envName: nodeDetails.environmentName
+            },
+            configDetails: {
+                id: nodeDetails.chef.serverId,
+                nodeName: nodeDetails.chef.chefNodeName,
+                run_list: nodeDetails.runlist,
+                attributes: nodeDetails.attributes
+            },
+            blueprintDetails: {
+                id: nodeDetails.blueprintData.blueprintId ? nodeDetails.blueprintData.blueprintId : null,
+                name: nodeDetails.blueprintData.blueprintName ? nodeDetails.blueprintData.blueprintName : null,
+                templateName: nodeDetails.blueprintData.templateId ? nodeDetails.blueprintData.templateId : null,
+                templateType: nodeDetails.blueprintData.templateType ? nodeDetails.blueprintData.templateType : null
+            },
+            user: nodeDetails.catUser,
+            isScheduled: nodeDetails.isScheduled,
+            cronJobIds: nodeDetails.cronJobIds,
+            startScheduler: nodeDetails.instanceStartScheduler,
+            stopScheduler: nodeDetails.instanceStopScheduler,
+            authentication:'success',
+            interval: nodeDetails.interval,
+            stackName: nodeDetails.domainName && nodeDetails.domainName !== null ? nodeDetails.domainName : nodeDetails.stackName,
+            tagServer: nodeDetails.tagServer,
+            monitor: nodeDetails.monitor,
+            isDeleted: nodeDetails.isDeleted
+        }
+        if (nodeDetails.schedulerStartOn) {
+            resourceObj.schedulerStartOn = nodeDetails.schedulerStartOn;
+        }
+        if (nodeDetails.schedulerStopOn) {
+            resourceObj.schedulerStopOn = nodeDetails.schedulerStopOn;
+        }
+        if (nodeDetails.providerType && nodeDetails.providerType !== null) {
+            resourceObj.providerDetails = {
+                id: nodeDetails.providerId,
+                type: nodeDetails.providerType,
+                region: {
+                    region: nodeDetails.region && nodeDetails.region !== null ? nodeDetails.region : nodeDetails.providerData.region
+                },
+                keyPairId: nodeDetails.keyPairId
+            };
+            resourceObj.cost = nodeDetails.cost;
+            resourceObj.usage = nodeDetails.usage;
+            resourceObj.tags = nodeDetails.tags;
+            resourceObj.resourceType = 'EC2'
+        } else {
+            resourceObj.resourceType = 'Instance'
+        }
+        var filterBy = {
+            $or: [{
+                'resourceDetails.publicIp':nodeDetails.instanceIP
+            },
+                {
+                    'resourceDetails.privateIp': nodeDetails.instanceIP
+                },
+                {
+                    'configDetails.nodeName': nodeDetails.chef.chefNodeName
+                },
+                {
+                    'resourceDetails.platformId':nodeDetails.platformId
+                }],
+            isDeleted:false
+        }
+        resourceModel.getResources(filterBy, function (err, data) {
+            if (err) {
+                logger.error("Error in fetching Resources>>>>:", err);
+                return callback(err, null);
+            } else if (data.length > 0) {
+                if(data[0].providerDetails.type && data[0].providerDetails.type === 'AWS'){
+                    delete resourceObj.name;
+                    resourceObj.resourceType = 'EC2'
+                    resourceObj['resourceDetails.bootStrapState'] = nodeDetails.bootStrapStatus === 'waiting' || nodeDetails.bootStrapStatus === 'pending'?'bootStrapping':nodeDetails.bootStrapStatus;
+                    resourceObj['resourceDetails.credentials'] = nodeDetails.credentials;
+                    resourceObj['resourceDetails.route53HostedParams'] = nodeDetails.route53HostedParams;
+                    resourceObj['resourceDetails.hardware'] = nodeDetails.hardware;
+                    resourceObj['resourceDetails.dockerEngineState'] = nodeDetails.docker && nodeDetails.docker.dockerEngineStatus ? nodeDetails.docker.dockerEngineStatus : null;
+                }
+                resourceModel.updateResourceById(data[0]._id, resourceObj, function (err, instanceData) {
+                    if (err) {
+                        logger.error("Error in updating Resources>>>>:", err);
+                        return callback(err, null);
+                    } else {
+                        return callback(null, data[0]);
+                    }
+                })
+            } else {
+                resourceObj.resourceDetails = {
+                    platformId: nodeDetails.platformId,
+                    vpcId: nodeDetails.vpcId ? instance.vpcId : null,
+                    subnetId: nodeDetails.subnetId ? instance.subnetId : null,
+                    hostName: nodeDetails.hostName ? instance.hostName : null,
+                    publicIp: nodeDetails.instanceIP,
+                    privateIp: nodeDetails.privateIpAddress,
+                    state: nodeDetails.instanceState,
+                    bootStrapState: nodeDetails.bootStrapStatus === 'waiting' || nodeDetails.bootStrapStatus === 'pending'?'bootStrapping':nodeDetails.bootStrapStatus,
+                    credentials: nodeDetails.credentials,
+                    route53HostedParams: nodeDetails.route53HostedParams,
+                    hardware: nodeDetails.hardware,
+                    dockerEngineState: nodeDetails.docker && nodeDetails.docker.dockerEngineStatus ? nodeDetails.docker.dockerEngineStatus : null
+                };
+                resourceObj.createdOn = new Date().getTime();
+                resourceModel.createNew(resourceObj, function (err, data) {
+                    if (err) {
+                        logger.error("Error in creating Resources>>>>:", err);
+                        return callback(err, null);
+                    } else {
+                        return callback(null, data);
+                    }
+                })
+            }
+        });
+    }
 }
 
 commonService.executeCookBookOnResource = function executeCookBookOnResource(resourceId,reqBody,callback) {
@@ -1655,7 +1780,6 @@ commonService.executeCookBookOnResource = function executeCookBookOnResource(res
                         } else {
                             runOptions.password = decryptedCredentials.password;
                         }
-
                     } else {
                         var puppetSettings = {
                             host: serverDetails.hostname,
@@ -1679,6 +1803,7 @@ commonService.executeCookBookOnResource = function executeCookBookOnResource(res
                             runOptions.password = decryptedCredentials.password;
                         }
                     }
+                    console.log("Run-Options>>>",runOptions);
                     infraManager.runClient(runOptions, function (err, retCode) {
                         if (decryptedCredentials.pemFileLocation) {
                             fileIo.removeFile(decryptedCredentials.pemFileLocation, function (err) {
